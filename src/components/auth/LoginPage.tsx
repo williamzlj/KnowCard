@@ -4,6 +4,20 @@ import { useAuthStore } from '../../stores/useAuthStore'
 import { Lock, User, UserPlus, Key, ArrowRight } from 'lucide-react'
 import './Auth.css'
 
+function KnowCardLogo() {
+  return (
+    <div className="knowcard-logo">
+      <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="4" y="4" width="40" height="40" rx="8" fill="#667eea" />
+        <path d="M16 14L16 34" stroke="#fff" strokeWidth="3" strokeLinecap="round" />
+        <path d="M16 24L30 14" stroke="#fff" strokeWidth="3" strokeLinecap="round" />
+        <path d="M16 24L30 34" stroke="#fff" strokeWidth="3" strokeLinecap="round" />
+      </svg>
+      <span className="knowcard-name">KnowCard</span>
+    </div>
+  )
+}
+
 export function LoginPage({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [username, setUsername] = useState('')
@@ -49,6 +63,7 @@ export function LoginPage({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   return (
     <div className="auth-page">
       <div className="auth-card">
+        <KnowCardLogo />
         <h1 className="auth-title">
           {mode === 'login' ? '用户登录' : '用户注册'}
         </h1>
@@ -115,10 +130,17 @@ export function LoginPage({ onLoginSuccess }: { onLoginSuccess: () => void }) {
           )}
         </div>
         <div className="auth-hint">
-          <h3 style={{ marginBottom: 10, fontSize: 16, color: '#333' }}>📚 知识卡片智能排版工具</h3>
-          <p style={{ fontSize: 13, color: '#666', lineHeight: 1.6 }}>
-            一款专注于知识卡片制作与排版的工具。支持批量创建卡片、自动排版、卡片样式自定义、图片裁剪、数学公式渲染等功能，帮助您高效制作美观的知识卡片。
+          <h3 className="auth-hint-title">📚 知识卡片智能排版工具</h3>
+          <p className="auth-hint-text">
+            一款专注于知识卡片制作与排版的工具。支持批量创建卡片、自动排版、卡片样式自定义、数学公式渲染等功能，帮助您高效制作美观的知识卡片。
           </p>
+        </div>
+        <div className="auth-data-warning">
+          <p>⚠️ 本软件数据全部保存在用户浏览器管理的indexedDB数据库，服务器端不存储任何用户数据，请及时备份和保存。</p>
+        </div>
+        <div className="auth-author">
+          <p>本软件由 张亮军 开发</p>
+          <p>张亮数理化 无锡海岸城</p>
         </div>
       </div>
     </div>

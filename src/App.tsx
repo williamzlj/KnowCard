@@ -105,7 +105,7 @@ export default function App() {
             currentUser={currentUser}
           />
         </div>
-        <ProjectManager onBack={() => {}} />
+        <ProjectManager />
       </div>
     )
   }
