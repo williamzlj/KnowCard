@@ -1,0 +1,688 @@
+# KnowCard 核心技术实现文档
+
+本文档详细介绍 KnowCard 知识卡片排版工具核心技术难点的实现方案与解决思路，
+供开发者理解和二次开发参考。
+
+源代码文件索引：
+  - 自动布局：src/utils/cardLayout.ts
+  - 尺寸计算：src/utils/cardSize.ts
+  - 富文本解析：src/utils/richText.ts
+  - 画布渲染：src/components/canvas/CanvasView.tsx
+  - 数据库备份：src/db/backup.ts
+  - 用户认证：src/db/auth.ts
+  - 卡片 Store：src/stores/useCardStore.ts
+
+──────────────────────────────────────────────────────────
+1.  单位系统：毫米（mm）与像素（px）的精确转换
+──────────────────────────────────────────────────────────
+
+1.1  问题背景
+
+    屏幕上卡片的物理尺寸需要以毫米（mm）为基准，因为最终输出（打印、PNG 导出）要
+    对应真实纸张尺寸。但 HTML Canvas（Konva）的坐标系是像素。因此一个核心问题是：
+    如何在 mm 和 px 之间做精确的双向转换。
+
+1.2  解决方案
+
+    定义常量 MM_TO_PX（等价于 PX_PER_MM = 3.779527559）：
+
+    const PX_PER_MM = 3.779527559  // 1 mm = 3.779527559 px（对应 96 DPI）
+
+    转换公式：
+      像素 → 毫米：mm = px / PX_PER_MM
+      毫米 → 像素：px = mm * PX_PER_MM
+
+1.3  应用场景
+
+    • A4 页面尺寸 = 210×297 mm，转换为 px 后交给 Konva Stage
+    • 图片导入时，img.width / img.height 是像素，除以 PX_PER_MM 后得到毫米尺寸
+    • 裁剪图片时，裁剪后 img.width / img.height 同样需要除以 PX_PER_MM
+    • 卡片尺寸（CardSize）的存储和传输都以 mm 为单位
+    • 用户输入宽度/高度时以 mm 为单位，渲染时乘以 PX_PER_MM
+
+1.4  精度处理
+
+    所有用户可见的小数值使用 .toFixed(1) 保留一位小数。
+
+
+──────────────────────────────────────────────────────────
+2.  水平自动排版算法（applyCompactLayout）
+──────────────────────────────────────────────────────────
+
+    文件：src/utils/cardLayout.ts
+
+2.1  算法目标
+
+    将一组卡片按照 order 排序后，紧凑地放置在安全区域（safeArea）内。每张卡片
+    寻找 Y 坐标最小的合法位置。
+
+2.2  核心数据结构
+
+    interface Rect {
+      x: number      // 左上角 x（相对于安全区域）
+      y: number      // 左上角 y
+      w: number      // 卡片宽度
+      h: number      // 卡片高度
+    }
+
+2.3  算法流程（逐卡放置 + 像素级扫描）
+
+    Step 1：将卡片按 order 升序排列
+    Step 2：第一张卡片放在安全区域左上角 (safeArea.x, safeArea.y)
+    Step 3：对后续每张卡片 card(w,h)：
+        a. 遍历可能的 x 坐标（从 safeArea.x 到 safeArea.x + safeArea.w - w，步长 1px）
+        b. 对每个候选 x，计算该列的 rowY：
+            rowY = safeArea.y
+            for 每个已放置的卡片 p:
+                if (cx < p.x + p.w + minHSpacing && cx + w > p.x - minHSpacing)
+                    // 该候选 x 与 p 在水平方向有重叠
+                    rowY = max(rowY, p.y + p.h + minVSpacing)
+        c. 记录使 rowY 最小且 rowY + h 仍在安全区域内的 (bestX, rowY)
+    Step 4：如果找不到合法位置（minY = Infinity），将卡片放在安全区域之外
+    Step 5：将该卡片记录到已放置列表中
+
+2.4  复杂度与优化
+
+    • 时间复杂度：O(N × W)，其中 N 是卡片数，W 是安全区域宽度（以 px 计）
+    • 对于 A4 页面（约 760px 宽），每张卡片扫描约 760 个候选列
+    • 步长 1px 确保精确定位，实际性能可接受（N < 100 时总扫描量 < 76,000）
+    • 溢出处理：超出安全区域的卡片由 CanvasView 自动创建新页面
+
+2.5  关键代码
+
+    function applyCompactLayout(
+      cards: Array<Rect & { order: number; id: string }>,
+      safeArea: Rect,
+      minHSpacing: number,
+      minVSpacing: number,
+    ): Array<Rect & { order: number; id: string }>
+
+
+──────────────────────────────────────────────────────────
+3.  竖直自动排版算法（applyCompactLayoutVertical）
+──────────────────────────────────────────────────────────
+
+    文件：src/utils/cardLayout.ts
+
+3.1  算法目标
+
+    竖直排版模式下，卡片按列（column）排列。每列从上往下放卡片，新卡片优先放入
+    当前列中 bottomY 最低的那一列；如果所有列都放不下，创建新列。
+
+3.2  核心数据结构
+
+    interface ColumnState {
+      x: number         // 该列的 x 坐标
+      colWidth: number  // 该列的宽度（取该列最宽卡片的宽度）
+      bottomY: number   // 该列最后一张卡片底部的 y 坐标
+    }
+
+3.3  算法流程
+
+    Step 1：将卡片按 order 升序排列
+    Step 2：第一张卡片放在安全区域左上角，创建第一列
+    Step 3：对后续每张卡片 card(w,h)：
+        a. 遍历现有所有列，找 bottomY + minVSpacing + h 仍不超出安全区域且 bottomY 最小的列
+        b. 如果找到（bestColIdx >= 0）：
+           → 放在该列的 (col.x, bottomY + minVSpacing) 处
+           → 更新该列 bottomY 为卡片底部
+        c. 如果没找到：
+           → 计算所有列的最右边界 maxRight
+           → 新列的 x = maxRight + minHSpacing
+           → 如果新 x + w 不超出安全区域，创建新列
+           → 否则（列已满），溢出放置
+
+3.4  与水平排版的区别
+
+    | 特性           | 水平排版                        | 竖直排版                      |
+    |----------------|--------------------------------|------------------------------|
+    | 放置方式       | 逐卡扫描所有候选 x              | 逐卡扫描现有列                |
+    | 空间管理       | 像素级扫描                      | 列级管理（列 = 竖直容器）     |
+    | 增长方向       | 优先 Y 方向                     | Y 方向排满后 X 方向新增列     |
+    | 适用场景       | 卡片大小不一                    | 卡片高度相近、纵向分组        |
+
+
+──────────────────────────────────────────────────────────
+4.  自动高度计算（calcCardSize / calcCardHeight）
+──────────────────────────────────────────────────────────
+
+    文件：src/utils/cardSize.ts
+
+4.1  问题背景
+
+    卡片的富文本内容长度不固定，且可能包含换行、中英文混排。需要在不渲染到 DOM
+    的情况下预估文本渲染后的实际宽度和高度。
+
+4.2  字符宽度估算
+
+    function estimateTextWidth(text: string, fontSize: number): number {
+      for each char:
+        if CJK 字符（Unicode 范围 0x4e00-0x9fff, 0x3000-0x303f, 0xff00-0xffef）:
+          width += fontSize             // 全角字符宽度 ≈ 字号
+        else:
+          width += fontSize * 0.6       // 半角字符宽度 ≈ 0.6 × 字号
+    }
+
+    这是基于经验的近似估算，不需要 DOM。
+
+4.3  卡片宽度计算（calcCardSize）
+
+    Step 1：计算标题宽度（如果有标题）
+    Step 2：按换行符 \n 分割正文，逐行用 estimateTextWidth 计算宽度，取最大值
+    Step 3：卡片宽 = max(标题宽, max(行宽)) + 左右 padding（各 10px）
+    Step 4：px 转 mm，约束在 MIN_WIDTH_MM(40) ~ MAX_WIDTH_MM(300) 之间
+    Step 5：返回整数宽度
+
+4.4  卡片高度计算（calcCardHeight）
+
+    Step 1：将 px 宽度（givenWidthMm * PX_PER_MM）减去左右 padding，得到正文可用宽度
+    Step 2：逐行文本模拟自动换行：
+        for each line in bodyText.split('\n'):
+            remaining = line
+            while remaining.length > 0:
+                贪心取尽可能多的字符，使其渲染宽度 ≤ 正文可用宽度
+                visualLines += 1   // 每换行一次计一个 visualLines
+    Step 3：正文高度 = visualLines × lineHeight（默认 fontSize * 1.5）
+    Step 4：总高 = (标题区: titleFontSize × 2 + 4) + 正文高 + 上下 padding + gap
+    Step 5：转 mm，最小值 22mm，向上取整
+
+    标题区恒定公式：calcTitleHeight = titleFontSize × 2 + 4
+
+4.5  常量一览
+
+    FONT_SIZE_PX = 13         默认正文字号
+    LINE_HEIGHT_RATIO = 1.5    行高倍率
+    PADDING_X_PX = 10          左右内边距
+    PADDING_Y_PX = 3           上下内边距
+    MIN_WIDTH_MM = 40          最小宽度 mm
+    MIN_HEIGHT_MM = 22         最小高度 mm
+    MAX_WIDTH_MM = 300         最大宽度 mm
+
+
+──────────────────────────────────────────────────────────
+5.  富文本解析（TipTap JSON  → 渲染行）
+──────────────────────────────────────────────────────────
+
+    文件：src/utils/richText.ts
+
+5.1  解析架构
+
+    编辑器（TipTap）生成 ProseMirror JSON → parseRichText → ParsedLine[]
+    ParsedLine = { segments: TextSegment[] }
+    TextSegment 携带：text, bold, italic, underline, strikethrough, color, fontSize,
+                       align, imageSrc, imageWidth, imageHeight, latex
+
+5.2  支持的节点类型
+
+    • paragraph / heading → 解析为一行 ParsedLine
+    • image → 单独一行，segments[0].imageSrc 携带图片路径
+    • blockMath → 单独一行，居中显示，segments[0].latex 携带公式源码
+    • bulletList / orderedList → 递归解析，支持嵌套列表
+    • 行内 $...$ 和 $$...$$ 公式 → 正则切分，插入 latex 类型的 TextSegment
+
+5.3  公式正则
+
+    (regex: /(?<!\$)\$\$([^\n$]+?)\$\$(?!\$)|(?<!\$)\$([^\n$]+?)\$(?!\$)/g)
+    同时匹配 $inline$ 和 $$block$$，并避免误匹配 $$$。
+
+5.4  文本提取（extractPlainText）
+
+    用于搜索/筛选/批量处理：递归遍历节点，拼接所有 type="text" 节点的文本。
+
+
+──────────────────────────────────────────────────────────
+6.  LaTeX 数学公式渲染
+──────────────────────────────────────────────────────────
+
+    文件：src/components/canvas/CanvasView.tsx
+
+6.1  渲染原理
+
+    KaTeX 只能输出 HTML DOM，但 Konva 只能渲染 Canvas 元素。
+    解决方案：
+      KaTeX（DOM）→ html2canvas（HTML → 图片）→ Konva Image
+
+6.2  完整渲染流程（useMathImage Hook）
+
+    Step 1：创建隐藏 div，className="katex-wrapper"
+    Step 2：调用 katex.renderToString(latex) 生成 HTML
+    Step 3：将 HTML 写入 div：div.innerHTML = katex_html
+    Step 4：document.body.appendChild(div) —— 将 div 添加到 DOM 才能被 html2canvas 截取
+    Step 5：setTimeout(30ms)，等待浏览器完成布局
+    Step 6：html2canvas(div, { scale: MATH_RENDER_SCALE, backgroundColor: 'transparent' })
+    Step 7：将 canvas 转为 Image 对象
+    Step 8：安全移除 div（检查 document.body.contains(div)）
+
+6.3  清晰度策略
+
+    关键常量：
+      const MATH_RENDER_SCALE = Math.max(window.devicePixelRatio || 1, 2)
+
+    html2canvas 以 2 倍或更高倍（devicePixelRatio）渲染，生成高分辨率图片。
+    然后 CanvasMath 组件中：
+      scaledWidth = image.width / MATH_RENDER_SCALE
+      scaledHeight = image.height / MATH_RENDER_SCALE
+
+    效果：渲染清晰度高（2x 或更高），但逻辑尺寸正常不放大。
+
+6.4  关键特殊逻辑
+
+    • 负号问题：katex.renderToString 前对 latex 字符串做 replace(/-/g, '\\text{-}')，
+      避免 KaTeX 将负号渲染为过短的连字符
+    • 宽度限制：CanvasMath 中 scale = min(1, maxWidth / image.width)，确保公式不超出
+      卡片宽度
+
+6.5  行间距控制
+
+    RichTextBody 中，公式行的估算高度 = fontSize × 1.8 + 2 px。
+    原因：太小（如 fontSize × 0.85）会导致上下公式重叠，太大则间距浪费。
+    fontSize × 1.8 经过了多次调整，最终找到一个既不重叠又不浪费的平衡点。
+
+
+──────────────────────────────────────────────────────────
+7.  Canvas 画布渲染（CanvasView）
+──────────────────────────────────────────────────────────
+
+    文件：src/components/canvas/CanvasView.tsx
+
+7.1  组件层次结构
+
+    CanvasView
+    ├── Stage（缩放 + 平移 + 事件）
+    │   ├── Layer（页面 + 元素）
+    │   │   ├── 页面背景 Rect
+    │   │   ├── 安全区域边框 Rect
+    │   │   ├── CardRenderer × N（卡片渲染）
+    │   │   │   └── RichTextBody（正文 + 公式 + 图片）
+    │   │   └── PageElementRenderer × N（文本框/红色方框/箭头/线段/图片）
+    │   ├── Layer（Transformer 变换框）
+    │   └── Layer（框选矩形）
+    └── TextInputDialog（文本输入弹窗）
+
+7.2  多页面分页
+
+    • pages 按 order 升序排列
+    • 每页垂直排列：y = 前页底部 + 30px 间距
+    • 每页的 safeArea 独立计算（getSafeArea(page)）
+    • 分页逻辑：
+        autoLayoutCards = applyCompactLayout(cards, safeArea, minHSpacing, minVSpacing)
+        overflowIds = findOverflowCards(autoLayoutCards, safeArea)
+        如果 overflowIds 不为空 → 将溢出卡片移到下一页
+        如果下一页不存在 → 自动创建新页面（通过 createAutoPage）
+
+7.3  全局编号
+
+    • showNumbers 模式下，跨页面按 page.order × card.order 全局排序
+    • 排除 excludeFromNumbering 的卡片
+    • 编号从 1 开始连续递增
+
+7.4  缩放与平移
+
+    • Ctrl + 滚轮：缩放（scale 0.1–‑5.0）
+    • 滚轮/拖拽空白区域：平移
+    • fitStage：计算所有页面总宽高，居中显示
+    • zoomReset：scale 恢复 1.0，平移到原点
+
+7.5  框选与 Shift 多选
+
+    • 鼠标拖拽空白区域（非卡片/非元素）→ 框选矩形
+    • 释放时通过 findCardsInRect 检测哪些卡片在框选矩形内
+    • Shift 拖拽 = 添加到已有选中（而非替换）
+
+7.6  剪贴板粘贴图片
+
+    • 监听 paste 事件
+    • clipboardData.files 中取 image/*
+    • FileReader 读取为 dataURL
+    • 存储为 PageElement（type: 'image'），尺寸：img.width / MM_TO_PX
+
+7.7  卡片碰撞检测（snapToEdges）
+
+    拖动卡片时，检查：
+    • 是否接近安全区域四边（左/右/上/下/中）
+    • 是否接近其他卡片边缘
+    • 阈值 snapThreshold = 5px
+    • 吸附后位置四舍五入到整数像素
+
+
+──────────────────────────────────────────────────────────
+8.  PNG 导出与打印模块
+──────────────────────────────────────────────────────────
+
+    文件：src/components/canvas/CanvasView.tsx
+
+8.1  PNG 导出流程
+
+    function handleExportPng() {
+        Step 1：获取所有页面尺寸（getPageDimensions）
+        Step 2：Stage.toDataURL() 一次性导出整个 Stage 为 PNG
+        Step 3：或 Stage.toBlob() 导出为 Blob
+        Step 4：触发浏览器下载：a.href = url, a.download = 'xxx.png', a.click()
+    }
+
+8.2  打印流程
+
+    function handlePrint() {
+        Step 1：Stage.toDataURL() 获取 PNG Data URL
+        Step 2：const printWin = window.open('', '_blank')
+        Step 3：printWin.document 写入：
+            <html><head><style>@page { size: A4; margin: 0 }</style></head>
+            <body style="margin:0"><img src="${dataUrl}" style="width:100%"/></body></html>
+        Step 4：printWin.focus()
+        Step 5：img.onload → printWin.print() → printWin.close()
+    }
+
+    使用 CSS @page 确保打印时按 A4 纸张规格输出。
+
+8.3  多页导出
+
+    如果有多页：
+    • 每页单独导出：逐页计算每页的 Stage 裁剪区域，分别 toDataURL
+    • 合并导出：逐页渲染到同一个 Blob（含分隔）
+
+8.4  防抖处理
+
+    Stage.toDataURL() 可能耗时，exportPNG/print 操作内部不做频繁调用。
+    缩放/平移后需等待渲染完成再导出。
+
+
+──────────────────────────────────────────────────────────
+9.  数据库备份与恢复
+──────────────────────────────────────────────────────────
+
+    文件：src/db/backup.ts
+
+9.1  数据表清单
+
+    | 表名           | 内容               | 备份 | 重置 |
+    |----------------|-------------------|------|------|
+    | projects       | 项目               | ✓    | ✓    |
+    | pages          | 页面               | ✓    | ✓    |
+    | cards          | 卡片               | ✓    | ✓    |
+    | cardGroups     | 卡片分组            | ✓    | ✓    |
+    | pageElements   | 页面元素（图片等）   | ✓    | ✓    |
+    | settings       | 应用设置            | ✓    | ✓    |
+    | stylePresets   | 样式预设（样式库）   | ✓    | ✓    |
+    | contentPresets | 内容预设（资料库）   | ✓    | ✓    |
+    | cardSizePresets| 尺寸预设（尺寸库）   | ✓    | ✓    |
+    | users          | 用户表              | ✗    | ✗    |
+
+    重要设计决策：users 表不随备份导出，也不在重置时清空。
+    原因：用户在 A 机器创建的管理员不应覆盖 B 机器的用户数据。
+
+9.2  导出流程
+
+    exportDatabase():
+        Step 1：db.projects.toArray() + 8 张其他表并行读取
+        Step 2：JSON.stringify(data, null, 2) 格式化
+        Step 3：Blob → URL.createObjectURL → a.click() 触发下载
+        文件名：KnowCard_完整数据库_YYYYMMDD_HHmmss.json
+
+9.3  导入流程
+
+    importDatabase(file):
+        Step 1：file.text() 读取 → JSON.parse
+        Step 2：校验必须字段（projects/pages/cards/cardGroups/pageElements）
+        Step 3：db.transaction('rw', allTables) 内：
+            a. 清空全部 9 张表（不含 users）
+            b. 批量写入 bulkAdd
+        Step 4：返回 { success: true } 或 { success: false, error: '...' }
+
+9.4  重置流程
+
+    resetDatabase():
+        Step 1：先调用 exportDatabase() 做最后一次备份
+        Step 2：备份失败 → 取消重置，返回失败
+        Step 3：备份成功 → 清空 5 张核心业务表（projects/pages/cards/cardGroups/pageElements）
+        Step 4：保留 settings/stylePresets/contentPresets/cardSizePresets/users
+
+    设计意图：保留预设数据和用户数据，只清除项目相关数据。
+
+
+──────────────────────────────────────────────────────────
+10. 用户认证系统
+──────────────────────────────────────────────────────────
+
+    文件：src/db/auth.ts
+
+10.1 密码安全性
+
+    const SALT = 'knowcard-salt-2025'
+
+    hashPassword(password):
+        encoder = new TextEncoder()
+        data = encoder.encode(password + SALT)
+        hashBuffer = await crypto.subtle.digest('SHA-256', data)
+        转为十六进制字符串
+        return hashHex
+
+    使用 Web Crypto API 原生 SHA-256 实现，无第三方密码库依赖。
+
+10.2 功能实现
+
+    registerUser(username, password, isAdmin):
+        • 检查用户名是否已存在（equalsIgnoreCase）
+        • 哈希密码
+        • 写入 users 表
+
+    loginUser(username, password):
+        • 先哈希输入密码
+        • 同时匹配 username 和 passwordHash
+        • 匹配失败抛出错误
+
+    ensureAdminUser():
+        • 应用启动时调用
+        • 如果 users 表为空（count = 0），创建默认 admin/admin123
+
+10.3 更新的功能
+
+    • updateUsername(userId, newUsername)：更新用户名，检查重名
+    • updatePassword(userId, newPassword)：更新密码哈希
+    • updateUserRole(userId, isAdmin)：修改管理员权限
+    • deleteUser(userId)：删除用户（前端保护：不允许删除自己）
+    • getAllUsers()：获取所有用户列表（仅管理员可调用）
+
+
+──────────────────────────────────────────────────────────
+11. Zustand 状态管理（useCardStore）
+──────────────────────────────────────────────────────────
+
+    文件：src/stores/useCardStore.ts
+
+11.1 Store 设计
+
+    每个核心领域一个 Store：
+    • useProjectStore → 项目列表、当前项目
+    • usePageStore → 页面列表、当前页面
+    • useCardStore → 卡片 CRUD、排序、样式管理、批量导入
+    • usePageElementStore → 页面元素 CRUD
+    • useEditorStore → 编辑器开关状态
+    • useCanvasStore → 缩放/平移状态
+    • useAuthStore → 当前登录用户
+
+11.2 卡片排序（reorderCards）
+
+    前端拖拽后调用 reorderCards(cardIds: string[])：
+    for (let i = 0; i < cardIds.length; i++)
+        db.cards.update(cardIds[i], { order: i })
+    → loaderCards → 触发 React 重新渲染
+
+11.3 卡片编号重排（renumberCard）
+
+    目标：将某张卡片移动到编号为 newNumber 的位置（跨页面）
+    Step 1：构建全局有序列表 globalOrdered（pages.sortBy(order) → cards.sortBy(order)）
+    Step 2：移除目标卡片（movedIdx）
+    Step 3：在 newNumber 位置插入（跳过 excludeFromNumbering 的卡片计数）
+    Step 4：按页面分组，逐页更新 order
+    Step 5：目标卡片更新 pageId（可能换页）
+
+11.4 样式复制/粘贴
+
+    复制：sessionStorage.setItem('copiedCardStyle', JSON.stringify(card.style))
+    粘贴：从 sessionStorage 读取 → updateCard(cardId, { style })
+
+    设计为跨 Tab 生效（sessionStorage），而非 zustand store。
+
+11.5 应用样式到所有卡片
+
+    applyStyleToAll(sourceCardId)：
+    • 获取 sourceCard.style
+    • db.cards.where('projectId').equals(projectId) 获取该项目所有卡片
+    • 批量 db.cards.update(card.id, { style })
+
+
+──────────────────────────────────────────────────────────
+12. 图片处理与裁剪
+──────────────────────────────────────────────────────────
+
+12.1 图片导入
+
+    三个入口：
+    TopToolbar.tsx：
+      • 文件选择器：img.onload → size: { w: img.width/ PX_PER_MM, h: img.height/ PX_PER_MM }
+      • 剪贴板粘贴：同理转换
+    CanvasView.tsx：
+      • 剪贴板粘贴事件 → 同样 px→mm 转换
+      • 都保留 1 位小数
+
+12.2 图片裁剪（CropDialog）
+
+    文件：src/components/canvas/CropDialog.tsx
+
+    Step 1：加载原始图片到隐藏 canvas
+    Step 2：拖拽选择裁剪区域（4 个角的缩放手柄）
+    Step 3：ctx.drawImage(original, sx, sy, sw, sh, 0, 0, sw, sh) 裁剪
+    Step 4：裁剪后 canvas.toDataURL() 返回
+    Step 5：PropertyPanel 中：img.onload → img.width / PX_PER_MM → 更新元素尺寸
+
+12.3 图片尺寸调整
+
+    PropertyPanel 中 show 图片的宽度/高度输入框：
+    • 输入单位为 mm
+    • 保留 1 位小数
+    • 支持锁定宽高比（lockImageRatio）
+    • 修改时按比例自动调整另一个维度
+
+12.4 TipTap 编辑器中的图片
+
+    EditorModal 中使用 custom ResizableImage extension（ReactNodeViewRenderer）：
+    • 图片包裹在可拖拽调整大小的容器中
+    • 使用 CSS aspect-ratio 保持比例
+
+
+──────────────────────────────────────────────────────────
+13. 富文本编辑器集成（TipTap + KaTeX）
+──────────────────────────────────────────────────────────
+
+    文件：src/components/editor/EditorModal.tsx
+
+13.1 编辑器配置
+
+    • StarterKit（paragraph, heading, bold, italic, 等基础节点）
+    • Mathematics extension：支持 $$ 块级公式和 $ 行内公式
+    • Image extension（inline: true）：支持点击选中图片
+    • Color / Highlight / TextAlign / Underline / FontFamily / TextStyle
+
+13.2 图片选中机制
+
+    • handleDOMEvents.click 拦截 img 点击事件
+    • NodeSelection.create(view, imgNodePos) 创建图片选区
+    • CSS 为选中状态添加蓝色边框高亮
+
+13.3 图片大小调整
+
+    • ResizeObserver 监听图片尺寸变化
+    • {editor.isActive('image') && ...} 条件渲染宽高输入框
+
+
+──────────────────────────────────────────────────────────
+14. 碰撞检测与辅助对齐（snapToEdges）
+──────────────────────────────────────────────────────────
+
+14.1 碰撞检测（checkCollision）
+
+    function checkCollision(a: Rect, b: Rect): boolean
+    a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+    标准 AABB 矩形碰撞检测。
+
+14.2 框选检测（findCardsInRect）
+
+    遍历所有卡片，返回与 selectionRect 碰撞的卡片索引。
+
+14.3 溢出检测（findOverflowCards）
+
+    检测 card 是否超出 safeArea（含 tolerance 容差）：
+    任一方向超出 → 标记为溢出卡片。
+
+14.4 吸附对齐（snapToEdges）
+
+    Step 1：水平吸附：
+        • 安全区域左/右/中边缘（阈值 5px）
+        • 其他卡片的 left 与 right 边缘
+    Step 2：垂直吸附（相同逻辑）
+
+
+──────────────────────────────────────────────────────────
+15. 资料库系统
+──────────────────────────────────────────────────────────
+
+    文件：src/components/card/ContentLibraryDialog.tsx
+
+15.1 内容库
+
+    • 数据表 contentPresets：name, title, content（TipTap JSON 字符串）、pinned
+    • 导入 JSON 格式：解析数组，逐条 createCardContentPreset
+    • 导出 JSON 格式：toArray + JSON.stringify + 下载（文件名含时间戳）
+    • 导入 TXT 格式：纯文本 / 标题：正文格式，批量导入
+    • 应用到卡片 → createCardsFromPresets → 使用当前卡片的样式
+
+15.2 样式库
+
+    数据表 stylePresets：name, style（JSON 字符串）、pinned
+
+15.3 尺寸库
+
+    数据表 cardSizePresets：name, width, height（mm）、pinned
+
+
+──────────────────────────────────────────────────────────
+附录 A：核心常量汇总
+──────────────────────────────────────────────────────────
+
+    MM_TO_PX             3.779527559          mm→px 转换系数
+    PX_PER_MM            3.779527559          px→mm 转换系数
+    FONT_SIZE_PX         13                   默认正文字号
+    LINE_HEIGHT_RATIO    1.5                  行高倍率
+    PADDING_X_PX         10                   卡片左右内边距 px
+    PADDING_Y_PX         3                    卡片上下内边距 px
+    MIN_WIDTH_MM         40                   卡片最小宽度 mm
+    MIN_HEIGHT_MM        22                   卡片最小高度 mm
+    MAX_WIDTH_MM         300                  卡片最大宽度 mm
+    SALT                 'knowcard-salt-2025'  密码哈希盐值
+    SNAP_THRESHOLD       5                    吸附对齐阈值 px
+    MATH_RENDER_SCALE    max(devicePixelRatio, 2)  公式渲染清晰度
+    FORMULA_LINE_HEIGHT  fontSize * 1.8 + 2   公式行估算高度
+
+
+──────────────────────────────────────────────────────────
+附录 B：依赖清单
+──────────────────────────────────────────────────────────
+
+    react              ^19.2.6         UI 框架
+    react-dom          ^19.2.6         DOM 渲染
+    react-konva        ^19.2.4         Canvas 绑定
+    konva              ^10.3.0         Canvas 库
+    react-router-dom   ^7.16.0         路由
+    zustand            ^5.0.14         状态管理
+    dexie              ^4.4.3          IndexedDB 封装
+    uuid               ^14.0.0         UUID 生成
+    katex              ^0.17.0         LaTeX 渲染
+    html2canvas        ^1.4.1          HTML→Canvas
+    jspdf              ^4.2.1          PDF 生成
+    lucide-react       ^1.17.0         图标库
+    @tiptap/react      ^3.23.6         富文本编辑器
+    @dnd-kit/core      ^6.3.1          拖拽排序
+
+──────────────────────────────────────────────────────────
+文档版本：1.0
+最后更新：2026-06-02

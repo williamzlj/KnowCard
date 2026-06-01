@@ -1,0 +1,868 @@
+# KnowCard 产品设计开发文档
+
+---
+
+## 文档说明
+
+本文档详细记录了 KnowCard 知识卡片排版工具的完整设计和开发文档，包含所有技术架构、数据库设计、功能模块等详细说明，供跨平台重构或重开发时参考。
+
+---
+
+## 目录
+
+1. 技术栈与架构
+2. 项目结构
+3. 数据库设计
+4. 数据类型定义
+5. 核心功能模块
+6. 用户界面设计
+7. 关键算法与工具函数
+8. 部署与配置
+
+---
+
+## 1. 技术栈与架构
+
+### 1.1 核心技术栈
+
+#### 前端框架
+- **React**: ^19.2.6
+- **TypeScript**: ~6.0.2
+- **Vite**: ^8.0.12
+- **React Router**: ^7.16.0
+
+#### 状态管理
+- **Zustand**: ^5.0.14
+
+#### 数据库
+- **Dexie.js (IndexedDB 封装): ^4.4.3
+
+#### UI组件库
+- **Konva / React-Konva (画布渲染): konva: ^10.3.0; react-konva: ^19.2.4
+- **TipTap (富文本编辑):
+  - @tiptap/react: ^3.23.6
+  - @tiptap/starter-kit: ^3.23.6
+  - @tiptap/extension-image: ^3.23.6
+  - @tiptap/extension-mathematics: ^3.24.0
+  - @tiptap/extension-color: ^3.23.6
+  - @tiptap/extension-font-family: ^3.23.6
+  - @tiptap/extension-highlight: ^3.23.6
+  - @tiptap/extension-text-align: ^3.23.6
+  - @tiptap/extension-text-style: ^3.23.6
+  - @tiptap/extension-underline: ^3.23.6
+
+#### 工具库
+- **KaTeX (LaTeX 公式渲染): ^0.17.0
+- **html2canvas (HTML转图片): ^1.4.1
+- **jspdf (PDF 生成): ^4.2.1
+- **uuid (ID生成): ^14.0.0
+- **lucide-react (图标库): ^1.17.0
+- **@dnd-kit (拖拽排序): ^6.3.1, ^10.0.0, ^3.2.2
+
+### 1.2 架构概览
+
+KnowCard 使用前端单页应用(SPA)架构：
+- 使用 Zustand 进行全局状态管理
+- 数据持久化使用 IndexedDB（通过 Dexie.js
+- 画布渲染使用 Konva
+- 富文本编辑使用 TipTap
+- 公式渲染使用 KaTeX
+- 图片导出使用 html2canvas
+
+---
+
+## 2. 项目结构
+
+### 2.1 目录结构
+
+```
+KnowCard/
+├── public/
+│   ├── favicon.svg
+│   └── icons.svg
+├── src/
+│   ├── components/           # 组件目录
+│   │   ├── auth/          # 用户认证模块
+│   │   │   ├── Auth.css
+│   │   │   ├── LoginPage.tsx
+│   │   │   ├── UserManagementPage.tsx
+│   │   │   └── UserSettingsPage.tsx
+│   │   ├── canvas/        # 画布组件
+│   │   │   ├── CanvasView.tsx
+│   │   │   ├── CropDialog.tsx
+│   │   │   └── TextInputDialog.tsx
+│   │   ├── card/         # 卡片相关组件
+│   │   │   ├── BulkCardDialog.tsx
+│   │   │   ├── CardListPanel.tsx
+│   │   │   ├── ContentLibraryDialog.tsx
+│   │   │   ├── SizeLibraryDialog.tsx
+│   │   │   └── StyleLibraryDialog.tsx
+│   │   ├── color/        # 颜色选择器
+│   │   │   └── ColorPicker.tsx
+│   │   ├── common/      # 通用组件
+│   │   │   └── ImeSafeInput.tsx
+│   │   ├── editor/      # 编辑器组件
+│   │   │   └── EditorModal.tsx
+│   │   ├── icons/       # 图标组件
+│   │   │   └── PinIcon.tsx
+│   │   ├── layout/     # 布局组件
+│   │   │   ├── TopToolbar.tsx
+│   │   │   └── BottomStatusBar.tsx
+│   │   ├── project/    # 项目管理
+│   │   │   └── ProjectManager.tsx
+│   │   └── properties/  # 属性面板
+│   │       └── PropertyPanel.tsx
+│   ├── db/              # 数据库模块
+│   │   ├── auth.ts
+│   │   ├── backup.ts
+│   │   └── database.ts
+│   ├── stores/          # Zustand 状态管理
+│   │   ├── index.ts
+│   │   ├── useAuthStore.ts
+│   │   ├── useCanvasStore.ts
+│   │   ├── useCardStore.ts
+│   │   ├── useEditorStore.ts
+│   │   ├── usePageElementStore.ts
+│   │   ├── usePageStore.ts
+│   │   └── useProjectStore.ts
+│   ├── types/          # TypeScript 类型定义
+│   │   ├── card.ts
+│   │   ├── element.ts
+│   │   ├── index.ts
+│   │   ├── page.ts
+│   │   └── project.ts
+│   ├── utils/          # 工具函数
+│   │   ├── cardLayout.ts
+│   │   ├── cardSize.ts
+│   │   └── richText.ts
+│   ├── App.css
+│   ├── App.tsx
+│   ├── index.css
+│   └── main.tsx
+├── .gitignore
+├── package.json
+├── package-lock.json
+├── tsconfig.app.json
+├── tsconfig.json
+├── tsconfig.node.json
+├── vite.config.ts
+└── index.html
+```
+
+---
+
+## 3. 数据库设计
+
+### 3.1 数据库版本历史
+
+使用 IndexedDB 数据库名称：`KnowCardDB`
+
+版本：
+- v1: 核心数据表
+- v2: 添加样式和内容预设
+- v3: 添加尺寸预设
+- v4: 添加用户系统
+
+### 3.2 数据表结构
+
+#### 1. **projects** (项目表)
+```javascript
+{
+  id: string,           // 项目ID（UUID）
+  name: string,
+  description: string,
+  createdAt: number,  // Unix 时间戳
+  updatedAt: number
+}
+索引：id, createdAt
+
+#### 2. **pages** (页面表)
+```javascript
+{
+  id: string,
+  projectId: string,
+  name: string,
+  size: 'A4' | 'A3',
+  orientation: 'portrait' | 'landscape',
+  margins: {
+    top: number,
+    bottom: number,
+    left: number,
+    right: number
+  },
+  pageNumber: {
+    enabled: boolean,
+    position: 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right',
+    font: string,
+    color: string,
+    size: number
+  },
+  footer: {
+    enabled: boolean,
+    text: string,
+    font: string,
+    color: string,
+    size: number,
+    position: 'left' | 'center' | 'right'
+  },
+  watermark: {
+    enabled: boolean,
+    text: string,
+    fontSize: number,
+    opacity: number,
+    density: number,
+    spacing: number,
+    color: string
+  },
+  cardMinHSpacing: number,
+  cardMinVSpacing: number,
+  order: number,
+  backgroundColor: string,
+  createdAt: number,
+  updatedAt: number
+}
+索引：id, projectId, order
+
+#### 3. **cards** (卡片表)
+```javascript
+{
+  id: string,
+  projectId: string,
+  pageId: string,
+  title: string,
+  name?: string,
+  content: object,
+  style: {
+    titleFont: string,
+    titleFontSize: number,
+    titleBold: boolean,
+    titleColor: string,
+    titleBackgroundColor: string,
+    bodyFont: string,
+    bodyFontSize: number,
+    bodyColor: string,
+    bodyBackgroundColor: string,
+    borderColor: string,
+    borderWidth: number,
+    borderRadius: number
+  },
+  size: {
+    defaultWidth: number,
+    defaultHeight: number,
+    projectWidth: number,
+    projectHeight: number
+  },
+  flags: {
+    hideBorder: boolean,
+    hideTitle: boolean,
+    hideBody: boolean,
+    showNumber: boolean,
+    excludeFromLayout: boolean,
+    excludeFromNumbering: boolean
+  },
+  position: {
+    x: number,
+    y: number
+  },
+  groupId?: string,
+  order: number,
+  createdAt: number,
+  updatedAt: number
+}
+索引：id, projectId, pageId, groupId, order
+
+#### 4. **cardGroups** (卡片分组表)
+```javascript
+{
+  id: string,
+  projectId: string,
+  name: string,
+  color: string,
+  order: number
+}
+索引：id, projectId, order
+
+#### 5. **pageElements** (页面元素表)
+```javascript
+{
+  id: string,
+  pageId: string,
+  type: 'text' | 'image' | 'line' | 'arrow' | 'red-box',
+  position: { x: number, y: number },
+  size: { width: number, height: number },
+  rotation: number,
+  style: object,
+  content: object,
+  zIndex: number,
+  createdAt: number,
+  updatedAt: number
+}
+索引：id, pageId, zIndex
+
+#### 6. **settings** (设置表)
+```javascript
+{
+  key: string,
+  value: unknown
+}
+索引：key
+
+#### 7. **stylePresets** (样式预设表)
+```javascript
+{
+  id: string,
+  name: string,
+  style: string,    // JSON 字符串，存储 CardStyle
+  createdAt: number,
+  pinned?: boolean
+}
+索引：id, createdAt
+
+#### 8. **contentPresets** (内容预设表)
+```javascript
+{
+  id: string,
+  name: string,
+  title: string,
+  content: string,
+  createdAt: number,
+  updatedAt: number,
+  pinned?: boolean
+}
+索引：id, createdAt
+
+#### 9. **cardSizePresets** (尺寸预设表)
+```javascript
+{
+  id: string,
+  name: string,
+  width: number,
+  height: number,
+  createdAt: number,
+  pinned?: boolean
+}
+索引：id, createdAt
+
+#### 10. **users** (用户表)
+```javascript
+{
+  id: string,
+  username: string,
+  passwordHash: string,
+  isAdmin: boolean,
+  createdAt: number,
+  updatedAt: number
+}
+索引：id, username, isAdmin
+
+### 3.3 默认管理员账号
+- 默认用户名：admin
+- 默认密码：admin123
+- 密码加密方式：SHA-256
+
+---
+
+## 4. 数据类型定义
+
+### 4.1 核心类型
+
+#### 1. Project（项目）
+- id: string (UUID)
+- name: string
+- description: string
+- createdAt: number
+- updatedAt: number
+
+#### 2. Page（页面）
+- id: string
+- projectId: string
+- name: string
+- size: 'A4' | 'A3'
+- orientation: 'portrait' | 'landscape'
+- margins: PageMargins
+- pageNumber: PageNumberSettings
+- footer: FooterSettings
+- watermark: WatermarkSettings
+- cardMinHSpacing: number
+- cardMinVSpacing: number
+- order: number
+- backgroundColor: string
+- createdAt: number
+- updatedAt: number
+
+#### 3. Card（卡片）
+- id: string
+- projectId: string
+- pageId: string
+- title: string
+- name?: string
+- content: object
+- style: CardStyle
+- size: CardSize
+- flags: CardFlags
+- position: { x: number; y: number }
+- groupId?: string
+- order: number
+- createdAt: number
+- updatedAt: number
+
+#### 4. CardStyle（卡片样式）
+- titleFont: string
+- titleFontSize: number
+- titleBold: boolean
+- titleColor: string
+- titleBackgroundColor: string
+- bodyFont: string
+- bodyFontSize: number
+- bodyColor: string
+- bodyBackgroundColor: string
+- borderColor: string
+- borderWidth: number
+- borderRadius: number
+
+#### 5. CardSize（卡片尺寸）
+- defaultWidth: number
+- defaultHeight: number
+- projectWidth: number
+- projectHeight: number
+
+#### 6. CardFlags（卡片标志）
+- hideBorder: boolean
+- hideTitle: boolean
+- hideBody: boolean
+- showNumber: boolean
+- excludeFromLayout: boolean
+- excludeFromNumbering: boolean
+
+#### 7. CardGroup（卡片分组）
+- id: string
+- projectId: string
+- name: string
+- color: string
+- order: number
+
+#### 8. PageElement（页面元素）
+- id: string
+- pageId: string
+- type: 'text' | 'image' | 'line' | 'arrow' | 'red-box'
+- position: { x: number; y: number }
+- size: { width: number; height: number }
+- rotation: number
+- style: object
+- content: object
+- zIndex: number
+- createdAt: number
+- updatedAt: number
+
+#### 9. User（用户）
+- id: string
+- username: string
+- passwordHash: string
+- isAdmin: boolean
+- createdAt: number
+- updatedAt: number
+
+### 4.2 工具类型
+
+#### 1. CardContentPreset（内容预设）
+- id: string
+- name: string
+- title: string
+- content: string
+- createdAt: number
+- updatedAt: number
+- pinned?: boolean
+
+#### 2. CardStylePreset（样式预设）
+- id: string
+- name: string
+- style: string
+- createdAt: number
+- pinned?: boolean
+
+#### 3. CardSizePreset（尺寸预设）
+- id: string
+- name: string
+- width: number
+- height: number
+- createdAt: number
+- pinned?: boolean
+
+### 4.3 支持的字体列表
+```javascript
+const ALLOWED_FONTS = [
+  '宋体',
+  '黑体',
+  '楷体',
+  'Arial',
+  'Times New Roman',
+  'Georgia'
+]
+```
+
+---
+
+## 5. 核心功能模块
+
+### 5.1 用户认证模块
+
+#### 功能
+1. 用户注册
+2. 用户登录
+3. 修改用户名
+4. 修改密码
+5. 用户管理后台（仅管理员可见）
+
+#### 登录页面布局
+- 渐变背景：#667eea → #764ba2
+- 输入框：圆角，支持切换登录/注册
+
+#### 用户管理后台功能
+- 查看所有用户列表
+- 修改用户权限
+- 重置用户密码
+- 删除用户
+- 不能删除自己
+
+#### 密码安全
+- 密码使用 SHA-256 哈希存储
+
+### 5.2 项目管理模块
+
+#### 功能
+1. 创建项目
+2. 导入项目
+3. 项目列表展示
+4. 导出项目
+5. 删除项目
+6. 导入导出数据库（完整备份）
+7. 重置数据库（自动备份）
+
+#### 项目管理页面布局
+- 项目网格布局
+- 新建/导入按钮
+- 数据库导出/导入/重置按钮（项目下方）
+- 项目卡片显示项目名、描述、更新时间
+
+### 5.3 页面管理模块
+
+#### 功能
+1. 新建页面
+2. 删除页面
+3. 页面切换
+4. 页面设置：
+   - 纸张尺寸（A4/A3）
+   - 纸张方向（纵向/横向）
+   - 页边距
+   - 页码
+   - 页脚
+   - 水印
+
+#### 页面导航栏功能：
+- 项目列表按钮图标
+- 页面选择下拉框
+- 页面管理下拉菜单（新建/删除页面）
+- 横向/纵向排版
+- 导入导出下拉菜单
+- 编号/正文切换
+- 添加元素下拉菜单（文本/箭头/方框/图片/粘贴图片）
+- 重置视图
+- 适应窗口
+- 缩放显示
+- 导出 PNG
+- 打印
+
+### 5.4 卡片管理模块
+
+#### 功能
+1. 新建卡片
+2. 编辑卡片
+3. 删除卡片
+4. 复制卡片
+5. 复制/粘贴样式
+6. 应用到所有卡片
+7. 卡片排序
+8. 批量导入卡片
+9. 批量导出卡片
+10. 卡片分组
+11. 卡片尺寸设置
+
+#### 卡片编辑功能
+- 标题/正文富文本编辑
+- 支持 LaTeX 公式
+- 支持图片插入
+- 支持文本格式化
+
+### 5.5 资料库模块
+
+#### 内容库
+- 保存常用内容
+- 导入/导出内容
+- 应用到卡片
+- 编辑、复制、删除
+
+#### 样式库
+- 保存常用样式
+- 应用到卡片
+
+#### 尺寸库
+- 保存常用尺寸
+- 应用到卡片
+
+### 5.6 画布渲染模块
+
+#### 功能
+1. 页面渲染
+2. 卡片渲染
+3. 公式渲染（使用 html2canvas 生成图片，scale: Math.max(devicePixelRatio, 2)
+4. 图片渲染
+5. 元素编辑
+6. 缩放控制
+7. 拖拽
+8. 旋转
+9. 导出 PNG
+10. 打印
+
+### 5.7 属性面板模块
+
+#### 功能
+1. 卡片属性设置
+- 标题样式（字体、字号、加粗、颜色、背景色）
+- 正文样式（字体、字号、颜色、背景色）
+- 边框样式（颜色、宽度、圆角）
+- 尺寸设置
+- 位置设置
+
+2. 图片属性设置
+- 图片裁剪
+- 图片尺寸（转换：mm）
+- 图片透明度
+
+3. 元素属性设置
+
+---
+
+## 6. 用户界面设计
+
+### 6.1 整体布局
+
+#### App 主布局结构
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    TopToolbar                          │
+├──────────────┬───────────────────────────┬─────────────┤
+│              │                         │             │
+│ CardList     │      CanvasView        │ Property    │
+│ Panel        │                         │ Panel        │
+│              │                         │             │
+├──────────────┴───────────────────────────┴─────────────┤
+│                  BottomStatusBar                   │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 6.2 TopToolbar 布局
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ [Home] 页面选择 [页面管理] [横向] [导入导出] [编号] [添加元素]   │
+│  [重置] [适应] [缩放]  [导出PNG] [打印] [用户菜单] │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 6.3 图标库
+- 统一使用 lucide-react 图标库
+- 不使用 emoji
+
+---
+
+## 7. 关键算法与工具函数
+
+### 7.1 单位转换
+
+毫米与像素转换
+```javascript
+const PX_PER_MM = 3.779527559
+// 像素转毫米：px / PX_PER_MM
+// 毫米转像素：mm * PX_PER_MM
+```
+
+### 7.2 页面尺寸计算
+
+A4 尺寸（210 × 297 mm
+A3 尺寸（297 × 420 mm
+横向时交换宽高
+
+### 7.3 卡片尺寸计算
+
+计算卡片高度计算：
+```javascript
+calcCardHeight(content, fontSize, titleFontSize, maxWidth, autoHeight, fixedHeight)
+
+标题高度：titleFontSize * 2 + 4
+
+### 7.4 富文本处理
+
+解析富文本内容解析
+- 识别 LaTeX 公式：$...$
+- 识别换行
+- 支持文本分段
+
+### 7.5 公式渲染流程
+1. KaTeX 渲染 LaTeX
+2. html2canvas 截取
+3. scale: Math.max(devicePixelRatio, 2)
+4. Canvas 中除以 scale
+
+### 7.6 卡片布局算法
+- 自动布局
+- 横向/纵向排列
+- 计算间距
+- 分页
+
+### 7.7 数据库备份与恢复
+
+导出文件名格式：
+- 完整数据库：`KnowCard_完整数据库_YYYYMMDD_HHMMSS.json
+
+重置前自动导出备份
+
+---
+
+## 8. 部署与配置
+
+### 8.1 依赖安装
+```bash
+npm install
+```
+
+### 8.2 开发启动
+```bash
+npm run dev
+```
+
+### 8.3 生产构建
+```bash
+npm run build
+```
+
+### 8.4 代码规范
+- TypeScript 类型检查
+- ESLint 代码风格检查
+
+---
+
+## 9. 主要组件详细说明
+
+### 9.1 App.tsx
+应用根组件
+管理视图状态：
+- 'login' | 'main' | 'project-manager' | 'user-settings' | 'user-management'
+
+### 9.2 LoginPage.tsx
+登录/注册页面
+
+### 9.3 ProjectManager.tsx
+项目管理页面
+- 新建项目
+- 导入项目
+- 项目列表
+- 数据库操作
+
+### 9.4 CanvasView.tsx
+画布视图组件
+- 页面渲染
+- 卡片渲染
+- 公式渲染
+- 元素渲染
+- 拖拽编辑
+
+### 9.5 CardListPanel.tsx
+卡片列表面板
+- 卡片列表
+- 新建卡片
+- 批量操作
+
+### 9.6 PropertyPanel.tsx
+属性面板
+- 卡片属性
+- 图片属性
+- 元素属性
+
+### 9.7 EditorModal.tsx
+编辑器模态框
+- TipTap 富文本编辑器
+- 公式支持
+- 图片支持
+
+---
+
+## 10. Zustand Stores
+
+### useProjectStore
+项目状态管理
+
+### usePageStore
+页面状态管理
+
+### useCardStore
+卡片状态管理
+
+### usePageElementStore
+页面元素状态管理
+
+### useEditorStore
+编辑器状态管理
+
+### useCanvasStore
+画布状态管理
+
+### useAuthStore
+认证状态管理
+
+---
+
+## 11. 配置文件
+
+### vite.config.ts
+Vite 构建配置
+
+### tsconfig.json
+TypeScript 配置
+
+---
+
+## 12. 重构指南
+
+### 12.1 替换技术栈建议
+
+如需跨平台开发：
+1. 保持状态管理思路
+2. 保持 IndexedDB
+3. 保持核心算法
+4. UI 框架可以替换为其他框架
+
+### 12.2 核心功能实现优先级
+
+1. 数据库与数据结构
+2. 项目/页面/卡片 CRUD
+3. 富文本编辑
+4. 公式渲染
+5. 画布渲染
+6. 用户系统
+7. 导入导出
+8. 资料库
+
+---
+
+## 附录：关键文件说明
+
+- src/db/database.ts: 数据库定义
+- src/types/: 类型定义
+- src/stores/: 状态管理
+- src/utils/: 工具函数
+
+---
+
+文档版本：1.0
+最后更新：2026-06-02
