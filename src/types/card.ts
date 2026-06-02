@@ -4,11 +4,16 @@ export interface CardStyle {
   titleBold: boolean
   titleColor: string
   titleBackgroundColor: string
+  titlePaddingY: number
+  titleHeight?: number
 
   bodyFont: string
   bodyFontSize: number
   bodyColor: string
   bodyBackgroundColor: string
+  bodyLineHeight: number
+
+  paddingX: number
 
   borderColor: string
   borderWidth: number
@@ -26,6 +31,7 @@ export interface CardFlags {
   hideBorder: boolean
   hideTitle: boolean
   hideBody: boolean
+  hideBodyArea: boolean
   showNumber: boolean
   excludeFromLayout: boolean
   excludeFromNumbering: boolean

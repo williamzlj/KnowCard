@@ -1,20 +1,23 @@
 import { useState, useRef, useEffect } from 'react'
 import { useProjectStore } from '../../stores'
 import { ContentLibraryDialog } from '../card/ContentLibraryDialog'
+import { ImageLibraryDialog } from '../card/ImageLibraryDialog'
+import { RegexReplaceDialog } from '../card/RegexReplaceDialog'
 import { exportDatabase, importDatabase, resetDatabase } from '../../db/backup'
-import { ChevronLeft, Plus, Upload, FolderOpen, Download, Database, Trash2 } from 'lucide-react'
+import { Plus, Upload, FolderOpen, Download, Database, Trash2, ImageIcon, Braces } from 'lucide-react'
 
 interface ProjectManagerProps {
-  onBack?: () => void
 }
 
-export function ProjectManager({ onBack }: ProjectManagerProps) {
+export function ProjectManager() {
   const { projects, createProject, renameProject, duplicateProject, deleteProject, setCurrentProject, exportProject, importProject, loadProjects } = useProjectStore()
   const [newName, setNewName] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [contentLibOpen, setContentLibOpen] = useState(false)
+  const [imageLibOpen, setImageLibOpen] = useState(false)
+  const [regexReplaceOpen, setRegexReplaceOpen] = useState(false)
   const dbFileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -60,26 +63,19 @@ export function ProjectManager({ onBack }: ProjectManagerProps) {
   return (
     <div className="project-manager">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-        {onBack && (
-          <button 
-            onClick={onBack}
-            style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: 6,
-              padding: '8px 16px',
-              border: '1px solid var(--border-color)',
-              borderRadius: '8px',
-              background: 'white',
-              cursor: 'pointer',
-              fontSize: 14
-            }}
-          >
-            <ChevronLeft size={18} />
-            返回
-          </button>
-        )}
         <h1>知识卡片智能排版工具</h1>
+      </div>
+
+      <div style={{ 
+        padding: '12px 16px', 
+        background: '#fff3cd', 
+        border: '1px solid #ffc107', 
+        borderRadius: '8px', 
+        marginBottom: 24,
+        fontSize: 14,
+        color: '#856404'
+      }}>
+        💡 提示：因为排版需要，本项目仅支持电脑浏览器操作，不支持手机浏览器操作。
       </div>
 
       <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -101,6 +97,14 @@ export function ProjectManager({ onBack }: ProjectManagerProps) {
         <button className="import-btn" onClick={() => setContentLibOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <FolderOpen size={16} />
           资料库
+        </button>
+        <button className="import-btn" onClick={() => setImageLibOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <ImageIcon size={16} />
+          图片库
+        </button>
+        <button className="import-btn" onClick={() => setRegexReplaceOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Braces size={16} />
+          正则替换
         </button>
         <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImport} />
       </div>
@@ -189,6 +193,14 @@ export function ProjectManager({ onBack }: ProjectManagerProps) {
         currentTitle=""
         currentContent={{ type: 'doc', content: [] }}
         standalone
+      />
+      <ImageLibraryDialog
+        isOpen={imageLibOpen}
+        onClose={() => setImageLibOpen(false)}
+      />
+      <RegexReplaceDialog
+        isOpen={regexReplaceOpen}
+        onClose={() => setRegexReplaceOpen(false)}
       />
     </div>
   )

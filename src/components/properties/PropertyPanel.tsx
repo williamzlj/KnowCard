@@ -22,7 +22,8 @@ import {
   Layers,
   ArrowUpRight,
   ArrowDownRight,
-  ClipboardCopy
+  ClipboardCopy,
+  Database
 } from 'lucide-react'
 
 let clipboardWidth: number | null = null
@@ -37,7 +38,7 @@ export function PropertyPanel() {
   const [cropDialogOpen, setCropDialogOpen] = useState(false)
   const { pages, currentPageId, updatePage } = usePageStore()
   const { currentProjectId } = useProjectStore()
-  const { elements, selectedElementIds, updateElement, deleteElement, duplicateElement } = usePageElementStore()
+  const { elements, selectedElementIds, updateElement, deleteElement, duplicateElement, copyElementToPage } = usePageElementStore()
 
   const selectedCard = selectedCardIds.length >= 1 ? cards.find(c => c.id === selectedCardIds[0]) : null
   const selectedCards = selectedCardIds.length > 1 ? cards.filter(c => selectedCardIds.includes(c.id)) : []
@@ -90,6 +91,36 @@ export function PropertyPanel() {
               {' '}隐藏箭头标记（仅保留直线）
             </label>
           </div>
+          <div className="form-group">
+            <label>所属页面</label>
+            <select
+              value={selectedElement.pageId}
+              onChange={(e) => updateElement(selectedElement.id, { pageId: e.target.value })}
+              style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', fontSize: 13 }}
+            >
+              {pages.map(p => (
+                <option key={p.id} value={p.id}>{p.name || `页面 ${p.order + 1}`}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label>复制到其他页面相同位置</label>
+            <select
+              value=""
+              onChange={(e) => {
+                if (e.target.value) {
+                  copyElementToPage(selectedElement.id, e.target.value)
+                  e.target.value = ''
+                }
+              }}
+              style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', fontSize: 13 }}
+            >
+              <option value="">选择页面...</option>
+              {pages.filter(p => p.id !== selectedElement.pageId).map(p => (
+                <option key={p.id} value={p.id}>{p.name || `页面 ${p.order + 1}`}</option>
+              ))}
+            </select>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
             <button
               onClick={() => duplicateElement(selectedElement.id)}
@@ -130,6 +161,36 @@ export function PropertyPanel() {
               <label>粗细</label>
               <input type="number" min={1} max={20} step={0.5} value={(style.strokeWidth as number) || 2} onChange={(e) => updateElement(selectedElement.id, { style: { ...style, strokeWidth: Number(e.target.value) } })} />
             </div>
+          </div>
+          <div className="form-group">
+            <label>所属页面</label>
+            <select
+              value={selectedElement.pageId}
+              onChange={(e) => updateElement(selectedElement.id, { pageId: e.target.value })}
+              style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', fontSize: 13 }}
+            >
+              {pages.map(p => (
+                <option key={p.id} value={p.id}>{p.name || `页面 ${p.order + 1}`}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label>复制到其他页面相同位置</label>
+            <select
+              value=""
+              onChange={(e) => {
+                if (e.target.value) {
+                  copyElementToPage(selectedElement.id, e.target.value)
+                  e.target.value = ''
+                }
+              }}
+              style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', fontSize: 13 }}
+            >
+              <option value="">选择页面...</option>
+              {pages.filter(p => p.id !== selectedElement.pageId).map(p => (
+                <option key={p.id} value={p.id}>{p.name || `页面 ${p.order + 1}`}</option>
+              ))}
+            </select>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
             <button
@@ -175,6 +236,36 @@ export function PropertyPanel() {
           <div className="form-group">
             <label>填充颜色</label>
             <ColorPicker value={(style.fill as string) || 'transparent'} onChange={(color) => updateElement(selectedElement.id, { style: { ...style, fill: color } })} />
+          </div>
+          <div className="form-group">
+            <label>所属页面</label>
+            <select
+              value={selectedElement.pageId}
+              onChange={(e) => updateElement(selectedElement.id, { pageId: e.target.value })}
+              style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', fontSize: 13 }}
+            >
+              {pages.map(p => (
+                <option key={p.id} value={p.id}>{p.name || `页面 ${p.order + 1}`}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label>复制到其他页面相同位置</label>
+            <select
+              value=""
+              onChange={(e) => {
+                if (e.target.value) {
+                  copyElementToPage(selectedElement.id, e.target.value)
+                  e.target.value = ''
+                }
+              }}
+              style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', fontSize: 13 }}
+            >
+              <option value="">选择页面...</option>
+              {pages.filter(p => p.id !== selectedElement.pageId).map(p => (
+                <option key={p.id} value={p.id}>{p.name || `页面 ${p.order + 1}`}</option>
+              ))}
+            </select>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
             <button
@@ -287,7 +378,46 @@ export function PropertyPanel() {
               复制图片
             </button>
           </div>
+          <div className="form-group" style={{ marginTop: 12 }}>
+            <label>所属页面</label>
+            <select
+              value={selectedElement.pageId}
+              onChange={(e) => updateElement(selectedElement.id, { pageId: e.target.value })}
+              style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', fontSize: 13 }}
+            >
+              {pages.map(p => (
+                <option key={p.id} value={p.id}>{p.name || `页面 ${p.order + 1}`}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label>复制到其他页面相同位置</label>
+            <select
+              value=""
+              onChange={(e) => {
+                if (e.target.value) {
+                  copyElementToPage(selectedElement.id, e.target.value)
+                  e.target.value = ''
+                }
+              }}
+              style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', fontSize: 13 }}
+            >
+              <option value="">选择页面...</option>
+              {pages.filter(p => p.id !== selectedElement.pageId).map(p => (
+                <option key={p.id} value={p.id}>{p.name || `页面 ${p.order + 1}`}</option>
+              ))}
+            </select>
+          </div>
           <div style={{ marginTop: 4 }}>
+            <button
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('save-to-image-library'))
+              }}
+              style={{ ...btnStyle, background: 'var(--bg-tertiary)', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 8 }}
+            >
+              <Database size={14} />
+              保存到图片库
+            </button>
             <button
               onClick={() => {
                 if (confirm('确定删除此图片？')) {
@@ -431,7 +561,7 @@ export function PropertyPanel() {
             </button>
             <button onClick={() => {
               for (const c of batchTargets) {
-                const computed = calcCardSize(c.title, c.content, c.style.bodyFontSize ?? 13, c.style.titleFontSize ?? 14)
+                const computed = calcCardSize(c.title, c.content, c.style.bodyFontSize ?? 13, c.style.titleFontSize ?? 14, c.style.bodyLineHeight ?? 1.5, c.style.titlePaddingY ?? 4, c.style.paddingX ?? 10, undefined, c.style.titleHeight)
                 const sa = getSafeArea(currentPage)
                 updateCard(c.id, { size: { ...c.size, projectWidth: Math.min(computed.width, sa.width) } })
               }
@@ -441,7 +571,7 @@ export function PropertyPanel() {
             </button>
             <button onClick={() => {
               for (const c of batchTargets) {
-                const ch = calcCardHeight(c.title, c.content, c.size.projectWidth, c.style.bodyFontSize ?? 13, c.style.titleFontSize ?? 14)
+                const ch = calcCardHeight(c.title, c.content, c.size.projectWidth, c.style.bodyFontSize ?? 13, c.style.titleFontSize ?? 14, c.style.bodyLineHeight ?? 1.5, c.style.paddingX ?? 10, c.style.titlePaddingY ?? 4, c.flags.showNumber, 0, c.flags.hideBodyArea, c.style.titleHeight)
                 updateCard(c.id, { size: { ...c.size, projectHeight: ch } })
               }
             }} style={{ ...btnBase, background: 'var(--accent-color)', color: '#fff', borderColor: 'var(--accent-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
@@ -541,6 +671,23 @@ export function PropertyPanel() {
               }} />
             </div>
           </div>
+          <div className="form-group">
+            <label>标题上下边距</label>
+            <input type="number" min={0} max={30} step={1} value={selectedCard.style.titlePaddingY ?? 4}
+              onChange={(e) => {
+                const v = Number(e.target.value)
+                for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, titlePaddingY: v } })
+              }} />
+          </div>
+          <div className="form-group">
+            <label>标题高度 (mm，留空为自动)</label>
+            <input type="number" min={0} max={100} step={1} placeholder="自动"
+              value={selectedCard.style.titleHeight ?? ''}
+              onChange={(e) => {
+                const v = e.target.value === '' ? undefined : Number(e.target.value)
+                for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, titleHeight: v } })
+              }} />
+          </div>
         </div>
 
         <div className="panel-section">
@@ -566,11 +713,21 @@ export function PropertyPanel() {
           </div>
           <div className="form-row">
             <div className="form-group">
+              <label>行间距</label>
+              <input type="number" min={0.8} max={3.0} step={0.1} value={selectedCard.style.bodyLineHeight ?? 1.5}
+                onChange={(e) => {
+                  const v = Number(e.target.value)
+                  for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, bodyLineHeight: v } })
+                }} />
+            </div>
+            <div className="form-group">
               <label>正文颜色</label>
               <ColorPicker value={selectedCard.style.bodyColor} onChange={(color) => {
                 for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, bodyColor: color } })
               }} />
             </div>
+          </div>
+          <div className="form-row">
             <div className="form-group">
               <label>正文背景</label>
               <ColorPicker value={selectedCard.style.bodyBackgroundColor} onChange={(color) => {
@@ -606,6 +763,14 @@ export function PropertyPanel() {
               }} />
             </div>
           </div>
+          <div className="form-group">
+            <label>内容左右边距</label>
+            <input type="number" min={0} max={50} step={1} value={selectedCard.style.paddingX ?? 10}
+              onChange={(e) => {
+                const v = Number(e.target.value)
+                for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, paddingX: v } })
+              }} />
+          </div>
         </div>
 
         <div className="panel-section">
@@ -634,7 +799,19 @@ export function PropertyPanel() {
                 const v = e.target.checked
                 for (const c of batchTargets) updateCard(c.id, { flags: { ...c.flags, hideBody: v } })
               }} />
-              {' '}隐藏正文
+              {' '}隐藏正文文字
+            </label>
+          </div>
+          <div className="form-group">
+            <label>
+              <input type="checkbox" checked={selectedCard.flags.hideBodyArea} onChange={(e) => {
+                const v = e.target.checked
+                for (const c of batchTargets) {
+                  const ch = calcCardHeight(c.title, c.content, c.size.projectWidth, c.style.bodyFontSize ?? 13, c.style.titleFontSize ?? 14, c.style.bodyLineHeight ?? 1.5, c.style.paddingX ?? 10, c.style.titlePaddingY ?? 4, c.flags.showNumber, 0, v, c.style.titleHeight)
+                  updateCard(c.id, { flags: { ...c.flags, hideBodyArea: v }, size: { ...c.size, projectHeight: ch } })
+                }
+              }} />
+              {' '}隐藏正文区域
             </label>
           </div>
           <div className="form-group">
@@ -749,6 +926,36 @@ export function PropertyPanel() {
                 </button>
               ))}
             </div>
+          </div>
+          <div className="form-group">
+            <label>所属页面</label>
+            <select
+              value={selectedElement.pageId}
+              onChange={(e) => updateElement(selectedElement.id, { pageId: e.target.value })}
+              style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', fontSize: 13 }}
+            >
+              {pages.map(p => (
+                <option key={p.id} value={p.id}>{p.name || `页面 ${p.order + 1}`}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label>复制到其他页面相同位置</label>
+            <select
+              value=""
+              onChange={(e) => {
+                if (e.target.value) {
+                  copyElementToPage(selectedElement.id, e.target.value)
+                  e.target.value = ''
+                }
+              }}
+              style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', fontSize: 13 }}
+            >
+              <option value="">选择页面...</option>
+              {pages.filter(p => p.id !== selectedElement.pageId).map(p => (
+                <option key={p.id} value={p.id}>{p.name || `页面 ${p.order + 1}`}</option>
+              ))}
+            </select>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
             <button

@@ -14,50 +14,6 @@ import {
   ClipboardCopy
 } from 'lucide-react'
 
-function Tooltip({ children, text }: { children: React.ReactNode; text: string }) {
-  const [show, setShow] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  
-  return (
-    <div
-      ref={ref}
-      style={{ position: 'relative', display: 'inline-block' }}
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-      onFocus={() => setShow(true)}
-      onBlur={() => setShow(false)}
-    >
-      {children}
-      {show && (
-        <div style={{
-          position: 'absolute',
-          bottom: 'calc(100% + 8px)',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: 'rgba(0, 0, 0, 0.8)',
-          color: '#fff',
-          padding: '6px 12px',
-          borderRadius: '6px',
-          fontSize: '12px',
-          whiteSpace: 'nowrap',
-          zIndex: 1000,
-          pointerEvents: 'none'
-        }}>
-          {text}
-          <div style={{
-            position: 'absolute',
-            top: '100%',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            border: '6px solid transparent',
-            borderTopColor: 'rgba(0, 0, 0, 0.8)',
-          }} />
-        </div>
-      )}
-    </div>
-  )
-}
-
 interface Props {
   isOpen: boolean
   onClose: () => void
@@ -556,7 +512,7 @@ export function ContentLibraryDialog({ isOpen, onClose, onApply, currentTitle, c
 
   return (
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '680px', maxWidth: '95%', display: 'flex', flexDirection: 'column', ...(standalone ? { height: '80vh' } : {}) }}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '95%', maxWidth: 1100, display: 'flex', flexDirection: 'column', ...(standalone ? { height: '80vh' } : {}) }}>
         <div className="modal-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px' }}>
           <h3>卡片资料库</h3>
           <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
@@ -608,24 +564,24 @@ export function ContentLibraryDialog({ isOpen, onClose, onApply, currentTitle, c
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <button
               onClick={() => setShowBatchImport(!showBatchImport)}
-              style={{ padding: '6px 12px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--bg-tertiary)', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}
+              className="content-toolbar-btn"
             >
               <Download size={14} />
               {showBatchImport ? '收起批量导入' : '批量导入'}
             </button>
-            <button onClick={handleExportTxt} style={{ padding: '6px 12px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--bg-tertiary)', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button onClick={handleExportTxt} className="content-toolbar-btn">
               <Upload size={14} />
               导出TXT
             </button>
-            <button onClick={() => fileInputRef.current?.click()} style={{ padding: '6px 12px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--bg-tertiary)', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button onClick={() => fileInputRef.current?.click()} className="content-toolbar-btn">
               <Download size={14} />
               导入TXT
             </button>
-            <button onClick={handleExportJson} style={{ padding: '6px 12px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--bg-tertiary)', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button onClick={handleExportJson} className="content-toolbar-btn">
               <Upload size={14} />
               导出JSON
             </button>
-            <button onClick={() => jsonFileInputRef.current?.click()} style={{ padding: '6px 12px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--bg-tertiary)', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button onClick={() => jsonFileInputRef.current?.click()} className="content-toolbar-btn">
               <Download size={14} />
               导入JSON
             </button>
@@ -633,15 +589,15 @@ export function ContentLibraryDialog({ isOpen, onClose, onApply, currentTitle, c
             <input ref={jsonFileInputRef} type="file" accept=".json" onChange={handleImportJson} style={{ display: 'none' }} />
             {showBatchFeatures && (
               <>
-                <button onClick={toggleSelectAll} style={{ padding: '5px 10px', fontSize: 12, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-tertiary)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                <button onClick={toggleSelectAll} className="content-toolbar-btn" style={{ fontSize: 12, padding: '5px 10px' }}>
                   {filteredPresets.length > 0 && [...selectedIds].filter(id => new Set(filteredPresets.map(p => p.id)).has(id)).length === filteredPresets.length ? '取消全选' : '全选'}
                 </button>
                 {selectedIds.size > 0 && (
                   <>
-                    <button onClick={handleBatchDelete} style={{ padding: '5px 10px', fontSize: 12, border: 'none', borderRadius: 'var(--radius-sm)', background: 'var(--danger-color)', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    <button onClick={handleBatchDelete} className="content-toolbar-btn" style={{ fontSize: 12, padding: '5px 10px' }}>
                       批量删除 ({selectedIds.size})
                     </button>
-                    <button onClick={handleBatchCreateCards} style={{ padding: '5px 10px', fontSize: 12, border: 'none', borderRadius: 'var(--radius-sm)', background: 'var(--accent-color)', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    <button onClick={handleBatchCreateCards} className="content-toolbar-btn" style={{ fontSize: 12, padding: '5px 10px' }}>
                       批量创建卡片 ({selectedIds.size})
                     </button>
                   </>
@@ -671,106 +627,140 @@ export function ContentLibraryDialog({ isOpen, onClose, onApply, currentTitle, c
             </div>
           )}
         </div>
-        <div style={{ padding: '8px 32px', ...(standalone ? { flex: 1, overflowY: 'auto' as const } : { maxHeight: 380, overflowY: 'auto' as const }) }}>
+        <div style={{ padding: 16, ...(standalone ? { flex: 1, overflowY: 'auto' as const } : { maxHeight: 500, overflowY: 'auto' as const }) }}>
           {filteredPresets.length === 0 && (
-            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24, fontSize: 13 }}>
+            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 60, fontSize: 13 }}>
               {searchQuery.trim() ? `未找到匹配"${searchQuery}"的资料` : '暂无保存的资料'}
             </div>
           )}
-          {pagedPresets.map(p => (
-            <div key={p.id} style={{ padding: '6px 0', borderBottom: '1px solid var(--border-color)' }}>
-              {editingId === p.id ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <input
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    placeholder="名称"
-                    style={{ padding: '4px 6px', border: '1px solid var(--accent-color)', borderRadius: 2, fontSize: 13 }}
-                  />
-                  <input
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                    placeholder="标题"
-                    style={{ padding: '4px 6px', border: '1px solid var(--border-color)', borderRadius: 2, fontSize: 13 }}
-                  />
-                  <textarea
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    placeholder="内容（JSON格式）"
-                    rows={3}
-                    style={{ padding: '4px 6px', border: '1px solid var(--border-color)', borderRadius: 2, fontSize: 13, resize: 'vertical', fontFamily: 'monospace' }}
-                  />
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button onClick={() => handleSaveEdit(p.id)} style={{ padding: '6px 12px', fontSize: 13, border: 'none', borderRadius: '8px', background: 'var(--accent-color)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <Check size={14} />
-                      保存
-                    </button>
-                    <button onClick={() => setEditingId(null)} style={{ padding: '6px 12px', fontSize: 13, border: 'none', borderRadius: '8px', background: 'var(--bg-tertiary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <X size={14} />
-                      取消
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <button
-                      onClick={() => handleTogglePin(p)}
-                      title={p.pinned ? '取消置顶' : '置顶'}
-                      style={{ padding: '4px', fontSize: 14, border: 'none', borderRadius: '6px', background: 'transparent', color: p.pinned ? '#e74c3c' : '#999', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center' }}
-                    >
-                      {p.pinned ? <PinIcon size={16} color="#e74c3c" /> : <PinOffIcon size={16} color="#999" />}
-                    </button>
-                    {showBatchFeatures && (
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(p.id)}
-                        onChange={() => toggleSelect(p.id)}
-                        style={{ flexShrink: 0, cursor: 'pointer', width: 18, height: 18 }}
-                      />
-                    )}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'baseline' }}>
-                        <span style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name} <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 13 }}>— {p.title}</span></span>
-                        <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 'auto', flexShrink: 0, paddingLeft: 8 }}>{new Date(p.createdAt).toLocaleDateString()}</span>
-                      </div>
-                      <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4, overflow: 'hidden', whiteSpace: 'pre-wrap', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3 }}>
-                        {(() => { try { const c = JSON.parse(p.content); return extractPreview(c) } catch { return p.content.slice(0, 100) } })()}
-                      </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+            {pagedPresets.map(p => (
+              <div
+                key={p.id}
+                onClick={() => { if (showBatchFeatures) toggleSelect(p.id) }}
+                style={{
+                  border: selectedIds.has(p.id) ? '2px solid var(--accent-color)' : '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: 10,
+                  cursor: showBatchFeatures ? 'pointer' : 'default',
+                  background: selectedIds.has(p.id) ? 'var(--accent-light, #e8f4fd)' : 'white',
+                  transition: 'all 0.15s',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
+                {editingId === p.id ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <input
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      placeholder="名称"
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ padding: '4px 6px', border: '1px solid var(--accent-color)', borderRadius: 4, fontSize: 13 }}
+                    />
+                    <input
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      placeholder="标题"
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ padding: '4px 6px', border: '1px solid var(--border-color)', borderRadius: 4, fontSize: 13 }}
+                    />
+                    <textarea
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      placeholder="内容（JSON格式）"
+                      rows={3}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ padding: '4px 6px', border: '1px solid var(--border-color)', borderRadius: 4, fontSize: 13, resize: 'vertical', fontFamily: 'monospace' }}
+                    />
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={(e) => { e.stopPropagation(); handleSaveEdit(p.id) }} style={{ flex: 1, padding: '5px 10px', fontSize: 12, border: 'none', borderRadius: 4, background: 'var(--accent-color)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                        <Check size={14} />
+                        保存
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); setEditingId(null) }} style={{ flex: 1, padding: '5px 10px', fontSize: 12, border: '1px solid var(--border-color)', borderRadius: 4, background: 'var(--bg-tertiary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                        <X size={14} />
+                        取消
+                      </button>
                     </div>
-                    {!standalone && (
-                      <Tooltip text="应用">
-                        <button onClick={() => handleApply(p)} style={{ padding: '8px', fontSize: 13, border: 'none', borderRadius: '8px', background: 'var(--accent-color)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <Check size={16} />
-                        </button>
-                      </Tooltip>
-                    )}
-                    <Tooltip text="编辑">
-                      <button onClick={() => startEdit(p)} style={{ padding: '8px', fontSize: 13, border: 'none', borderRadius: '8px', background: 'var(--bg-tertiary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Edit size={16} />
-                      </button>
-                    </Tooltip>
-                    <Tooltip text="复制">
-                      <button onClick={async () => {
-              try {
-                const parsed = JSON.parse(p.content) as Record<string, unknown>
-                const ok = await copyRichContentToClipboard(parsed)
-                showToast(ok ? '已复制到剪贴板，可在Word中粘贴' : '复制失败')
-              } catch { showToast('复制失败') }
-            }} style={{ padding: '8px', fontSize: 13, border: 'none', borderRadius: '8px', background: '#4caf50', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <ClipboardCopy size={16} />
-            </button>
-                    </Tooltip>
-                    <Tooltip text="删除">
-                      <button onClick={() => handleDelete(p.id)} style={{ padding: '8px', fontSize: 13, border: 'none', borderRadius: '8px', background: 'var(--danger-color)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Trash2 size={16} />
-                      </button>
-                    </Tooltip>
                   </div>
-                </>
-              )}
-            </div>
-          ))}
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleTogglePin(p) }}
+                        title={p.pinned ? '取消置顶' : '置顶'}
+                        style={{ padding: 2, border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+                      >
+                        {p.pinned ? <PinIcon size={14} color="#999" /> : <PinOffIcon size={14} color="#ccc" />}
+                      </button>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto', flexShrink: 0 }}>{new Date(p.createdAt).toLocaleDateString()}</span>
+                    </div>
+                    <div style={{ borderBottom: '1px solid var(--border-color)', marginBottom: 6 }} />
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#000', marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {p.title}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1, marginBottom: 8, overflow: 'hidden', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, lineHeight: 1.5 }}>
+                      {(() => { try { const c = JSON.parse(p.content); return extractPreview(c) } catch { return p.content.slice(0, 200) } })()}
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {showBatchFeatures && (
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(p.id)}
+                          onChange={() => toggleSelect(p.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ flexShrink: 0, cursor: 'pointer', width: 16, height: 16, marginRight: 4, alignSelf: 'center' }}
+                        />
+                      )}
+                      {!standalone && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleApply(p) }}
+                          title="应用"
+                          className="content-card-action-btn"
+                          style={{ flex: 1 }}
+                        >
+                          <Check size={14} />
+                        </button>
+                      )}
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation()
+                          try {
+                            const parsed = JSON.parse(p.content) as Record<string, unknown>
+                            const ok = await copyRichContentToClipboard(parsed)
+                            showToast(ok ? '已复制到剪贴板，可在Word中粘贴' : '复制失败')
+                          } catch { showToast('复制失败') }
+                        }}
+                        title="复制"
+                        className="content-card-action-btn"
+                        style={{ flex: 2 }}
+                      >
+                        <ClipboardCopy size={14} />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); startEdit(p) }}
+                        title="编辑"
+                        className="content-card-action-btn"
+                        style={{ flex: 1 }}
+                      >
+                        <Edit size={14} />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDelete(p.id) }}
+                        title="删除"
+                        className="content-card-action-btn"
+                        style={{ flex: 0.5, minWidth: 28 }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
         {totalPages > 1 && (
           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, padding: '8px 32px', borderTop: '1px solid var(--border-color)' }}>

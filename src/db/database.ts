@@ -45,6 +45,23 @@ export interface User {
   updatedAt: number
 }
 
+export interface ImageLibraryItem {
+  id: string
+  name: string
+  keywords: string
+  dataUrl: string
+  createdAt: number
+}
+
+export interface RegexPreset {
+  id: string
+  name: string
+  description: string
+  pattern: string
+  replace: string
+  createdAt: number
+}
+
 export class KnowCardDB extends Dexie {
   projects!: Table<Project, string>
   pages!: Table<Page, string>
@@ -56,6 +73,8 @@ export class KnowCardDB extends Dexie {
   contentPresets!: Table<CardContentPreset, string>
   cardSizePresets!: Table<CardSizePreset, string>
   users!: Table<User, string>
+  imageLibrary!: Table<ImageLibraryItem, string>
+  regexPresets!: Table<RegexPreset, string>
 
   constructor() {
     super('KnowCardDB')
@@ -103,6 +122,50 @@ export class KnowCardDB extends Dexie {
       contentPresets: 'id, createdAt',
       cardSizePresets: 'id, createdAt',
       users: 'id, username, isAdmin',
+    })
+
+    this.version(5).stores({
+      projects: 'id, createdAt',
+      pages: 'id, projectId, order',
+      cards: 'id, projectId, pageId, groupId, order',
+      cardGroups: 'id, projectId, order',
+      pageElements: 'id, pageId, zIndex',
+      settings: 'key',
+      stylePresets: 'id, createdAt',
+      contentPresets: 'id, createdAt',
+      cardSizePresets: 'id, createdAt',
+      users: 'id, username, isAdmin',
+      imageLibrary: 'id, name, keywords',
+    })
+
+    this.version(6).stores({
+      projects: 'id, createdAt',
+      pages: 'id, projectId, order',
+      cards: 'id, projectId, pageId, groupId, order',
+      cardGroups: 'id, projectId, order',
+      pageElements: 'id, pageId, zIndex',
+      settings: 'key',
+      stylePresets: 'id, createdAt',
+      contentPresets: 'id, createdAt',
+      cardSizePresets: 'id, createdAt',
+      users: 'id, username, isAdmin',
+      imageLibrary: 'id, name, keywords',
+      regexPresets: 'id, createdAt',
+    })
+
+    this.version(7).stores({
+      projects: 'id, createdAt',
+      pages: 'id, projectId, order',
+      cards: 'id, projectId, pageId, groupId, order',
+      cardGroups: 'id, projectId, order',
+      pageElements: 'id, pageId, zIndex',
+      settings: 'key',
+      stylePresets: 'id, createdAt',
+      contentPresets: 'id, createdAt',
+      cardSizePresets: 'id, createdAt',
+      users: 'id, username, isAdmin',
+      imageLibrary: 'id, name, keywords, createdAt',
+      regexPresets: 'id, createdAt',
     })
   }
 }

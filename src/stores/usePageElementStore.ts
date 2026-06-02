@@ -16,6 +16,7 @@ interface PageElementStore {
   clearSelection: () => void
   setActiveTool: (tool: PageElementType | null) => void
   duplicateElement: (id: string) => Promise<void>
+  copyElementToPage: (id: string, targetPageId: string) => Promise<void>
 }
 
 export const usePageElementStore = create<PageElementStore>((set, get) => ({
@@ -85,6 +86,25 @@ export const usePageElementStore = create<PageElementStore>((set, get) => ({
     }
     await db.pageElements.add(dup)
     set({ elements: [...elements, dup], selectedElementIds: [dup.id] })
+  },
+
+  copyElementToPage: async (id: string, targetPageId: string) => {
+    const { elements } = get()
+    const src = elements.find(e => e.id === id)
+    if (!src || src.pageId === targetPageId) return
+    const targetPageElements = await db.pageElements.where('pageId').equals(targetPageId).sortBy('zIndex')
+    const now = Date.now()
+    const dup: PageElement = {
+      ...src,
+      id: uuid(),
+      pageId: targetPageId,
+      position: { x: src.position.x, y: src.position.y },
+      zIndex: targetPageElements.length,
+      createdAt: now,
+      updatedAt: now,
+    }
+    await db.pageElements.add(dup)
+    set({ elements: [...elements, dup] })
   },
 
   selectElement: (id: string) => {

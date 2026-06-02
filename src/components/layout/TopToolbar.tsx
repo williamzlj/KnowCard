@@ -26,7 +26,8 @@ import {
   Shield,
   LogOut,
   ChevronDown,
-  Plus
+  Plus,
+  Database
 } from 'lucide-react'
 
 interface TopToolbarProps {
@@ -318,6 +319,14 @@ export function TopToolbar({ onGoToProjectManager }: TopToolbarProps) {
               }} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Clipboard size={16} />
                 粘贴图片
+              </button>
+              <div style={{ borderTop: '1px solid var(--border-color)', margin: '4px 0' }} />
+              <button onClick={() => {
+                window.dispatchEvent(new CustomEvent('open-image-library'))
+                setAddElementMenuOpen(false)
+              }} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Database size={16} />
+                图片库
               </button>
             </div>
           )}

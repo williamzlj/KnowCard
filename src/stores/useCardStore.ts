@@ -3,6 +3,7 @@ import type { Card, CardStyle, CardFlags, CardGroup } from '../types/card'
 import { db } from '../db/database'
 import { v4 as uuid } from 'uuid'
 import { calcCardSize } from '../utils/cardSize'
+import { getSafeArea } from '../types/page'
 
 const defaultCardStyle: CardStyle = {
   titleFont: '黑体',
@@ -10,10 +11,13 @@ const defaultCardStyle: CardStyle = {
   titleBold: true,
   titleColor: '#000000',
   titleBackgroundColor: '#e8f4fd',
+  titlePaddingY: 4,
   bodyFont: '宋体',
   bodyFontSize: 13,
   bodyColor: '#333333',
   bodyBackgroundColor: '#ffffff',
+  bodyLineHeight: 1.5,
+  paddingX: 10,
   borderColor: '#4a90d9',
   borderWidth: 1,
   borderRadius: 4,
@@ -23,7 +27,8 @@ const defaultCardFlags: CardFlags = {
   hideBorder: false,
   hideTitle: false,
   hideBody: false,
-  showNumber: false,
+    hideBodyArea: false,
+    showNumber: false,
   excludeFromLayout: false,
   excludeFromNumbering: false,
 }
@@ -91,9 +96,14 @@ export const useCardStore = create<CardStore>((set, get) => ({
       }
     }
 
+    // 获取页面信息以计算安全区域
+    const page = await db.pages.get(pageId)
+    const safeWidth = page ? getSafeArea(page).width : Number.MAX_VALUE
+
     const title = `卡片 ${insertOrder + 1}`
     const content = { type: 'doc', content: [] } as Record<string, unknown>
-    const computed = calcCardSize(title, content)
+    const computed = calcCardSize(title, content, undefined, undefined, undefined, defaultCardStyle.titlePaddingY, defaultCardStyle.paddingX)
+    const limitedWidth = Math.min(computed.width, safeWidth)
     const card: Card = {
       id: uuid(),
       projectId,
@@ -101,7 +111,7 @@ export const useCardStore = create<CardStore>((set, get) => ({
       title,
       content,
       style: { ...defaultCardStyle },
-      size: { defaultWidth: computed.width, defaultHeight: computed.height, projectWidth: computed.width, projectHeight: computed.height },
+      size: { defaultWidth: limitedWidth, defaultHeight: computed.height, projectWidth: limitedWidth, projectHeight: computed.height },
       flags: { ...defaultCardFlags },
       position: { x: 0, y: 0 },
       order: insertOrder,
@@ -344,10 +354,15 @@ export const useCardStore = create<CardStore>((set, get) => ({
       }
     }
 
+    // 获取页面信息以计算安全区域
+    const page = await db.pages.get(pageId)
+    const safeWidth = page ? getSafeArea(page).width : Number.MAX_VALUE
+
     const now = Date.now()
     for (let i = 0; i < items.length; i++) {
       const item = items[i]
-      const computed = calcCardSize(item.title, item.content)
+      const computed = calcCardSize(item.title, item.content, undefined, undefined, undefined, defaultCardStyle.titlePaddingY, defaultCardStyle.paddingX)
+      const limitedWidth = Math.min(computed.width, safeWidth)
       const card: Card = {
         id: uuid(),
         projectId,
@@ -356,7 +371,7 @@ export const useCardStore = create<CardStore>((set, get) => ({
         name: item.name,
         content: item.content,
         style: { ...defaultCardStyle },
-        size: { defaultWidth: computed.width, defaultHeight: computed.height, projectWidth: computed.width, projectHeight: computed.height },
+        size: { defaultWidth: limitedWidth, defaultHeight: computed.height, projectWidth: limitedWidth, projectHeight: computed.height },
         flags: { ...defaultCardFlags },
         position: { x: 0, y: 0 },
         order: insertOrder + i,

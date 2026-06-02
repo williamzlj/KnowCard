@@ -49,7 +49,7 @@ export async function importDatabase(file: File): Promise<{ success: boolean; er
     }
 
     await db.transaction('rw',
-      [db.projects, db.pages, db.cards, db.cardGroups, db.pageElements, db.settings, db.stylePresets, db.contentPresets, db.cardSizePresets],
+      [db.projects, db.pages, db.cards, db.cardGroups, db.pageElements, db.settings, db.stylePresets, db.contentPresets, db.cardSizePresets, db.imageLibrary, db.regexPresets],
       async () => {
         await Promise.all([
           db.projects.clear(),
@@ -61,6 +61,8 @@ export async function importDatabase(file: File): Promise<{ success: boolean; er
           db.stylePresets.clear(),
           db.contentPresets.clear(),
           db.cardSizePresets.clear(),
+          db.imageLibrary.clear(),
+          db.regexPresets.clear(),
         ])
 
         await Promise.all([
@@ -73,6 +75,8 @@ export async function importDatabase(file: File): Promise<{ success: boolean; er
           db.stylePresets.bulkAdd(data.stylePresets || []),
           db.contentPresets.bulkAdd(data.contentPresets || []),
           db.cardSizePresets.bulkAdd(data.cardSizePresets || []),
+          db.imageLibrary.bulkAdd(data.imageLibrary || []),
+          db.regexPresets.bulkAdd(data.regexPresets || []),
         ])
       })
 

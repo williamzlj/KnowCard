@@ -10,9 +10,12 @@ import type { Card } from '../../types/card'
 import type { PageElement } from '../../types/element'
 import { parseRichText, type TextSegment } from '../../utils/richText'
 import { applyCompactLayout, applyCompactLayoutVertical, findOverflowCards, findOverlapping, type Rect as CardRect } from '../../utils/cardLayout'
+import { splitTextToLines, measureTextWidth } from '../../utils/cardSize'
 import katex from 'katex'
 import html2canvas from 'html2canvas'
 import { TextInputDialog, computeTextElementSize } from './TextInputDialog'
+import { ImageLibraryDialog } from '../card/ImageLibraryDialog'
+import { useImageLibraryStore } from '../../stores/useImageLibraryStore'
 
 const MM_TO_PX = 3.779527559
 
@@ -47,7 +50,19 @@ function CardRenderer({ card, cardNumber, isSelected, onSelect, onDragStart, onD
   const bodyFontSize = card.style.bodyFontSize ?? 13
   const hasTitle = !card.flags.hideTitle && card.title.trim() !== ''
   const hasBorder = !card.flags.hideBorder
-  const titleHeight = hasTitle ? titleFontSize * 2 + 4 : 0
+  const titlePaddingY = card.style.titlePaddingY ?? 4
+  const paddingX = card.style.paddingX ?? 10
+  
+  // 计算标题的实际高度，支持最多2行
+  const showNumber = card.flags.showNumber && !card.flags.excludeFromNumbering
+  const numberText = showNumber ? `${cardNumber}.` : ''
+  const numberWidth = showNumber ? measureTextWidth(numberText, titleFontSize, card.style.titleFont, card.style.titleBold, false) : 0
+  const titleLines = splitTextToLines(card.title, titleFontSize, w - paddingX * 2 - numberWidth - 1) // 加1px作为编号和标题之间的小间隔
+  const maxTitleLines = 2
+  const displayLines = titleLines.slice(0, maxTitleLines)
+  const autoTitleHeight = hasTitle ? titleFontSize * 1.2 * displayLines.length + titlePaddingY * 2 : 0
+  const titleHeight = card.style.titleHeight != null ? card.style.titleHeight * MM_TO_PX : autoTitleHeight
+  const lineHeight = titleFontSize * 1.2
 
   useEffect(() => {
     if (isSelected && trRef.current && resizeRef.current) {
@@ -114,15 +129,15 @@ function CardRenderer({ card, cardNumber, isSelected, onSelect, onDragStart, onD
         }}
       >
         {!hasBorder && (
-          <Rect width={w} height={h} fill={card.style.bodyBackgroundColor}
+          <Rect width={w} height={card.flags.hideBodyArea && hasTitle ? titleHeight : h} fill={card.style.bodyBackgroundColor}
             cornerRadius={card.style.borderRadius ?? 4} />
         )}
         {hasBorder && (
           <>
-            <Rect width={w} height={h} fill={card.style.borderColor}
+            <Rect width={w} height={card.flags.hideBodyArea && hasTitle ? titleHeight : h} fill={card.style.borderColor}
               cornerRadius={card.style.borderRadius ?? 4} />
             <Rect x={card.style.borderWidth} y={card.style.borderWidth}
-              width={w - 2 * card.style.borderWidth} height={h - 2 * card.style.borderWidth}
+              width={w - 2 * card.style.borderWidth} height={(card.flags.hideBodyArea && hasTitle ? titleHeight : h) - 2 * card.style.borderWidth}
               fill={card.style.bodyBackgroundColor}
               cornerRadius={Math.max(0, (card.style.borderRadius ?? 4) - card.style.borderWidth)} />
           </>
@@ -134,39 +149,64 @@ function CardRenderer({ card, cardNumber, isSelected, onSelect, onDragStart, onD
                 width={w}
                 height={titleHeight}
                 fill={card.style.titleBackgroundColor}
-                cornerRadius={[card.style.borderRadius ?? 4, card.style.borderRadius ?? 4, 0, 0]}
+                cornerRadius={card.flags.hideBodyArea ? (card.style.borderRadius ?? 4) : [card.style.borderRadius ?? 4, card.style.borderRadius ?? 4, 0, 0]}
               />
             )}
             {hasBorder && (
               <Rect x={card.style.borderWidth} y={card.style.borderWidth}
                 width={w - 2 * card.style.borderWidth} height={titleHeight}
                 fill={card.style.titleBackgroundColor}
-                cornerRadius={[Math.max(0, (card.style.borderRadius ?? 4) - card.style.borderWidth),
-                  Math.max(0, (card.style.borderRadius ?? 4) - card.style.borderWidth), 0, 0]} />
+                cornerRadius={card.flags.hideBodyArea
+                  ? Math.max(0, (card.style.borderRadius ?? 4) - card.style.borderWidth)
+                  : [Math.max(0, (card.style.borderRadius ?? 4) - card.style.borderWidth),
+                    Math.max(0, (card.style.borderRadius ?? 4) - card.style.borderWidth), 0, 0]} />
             )}
-            <Text
-              x={10}
-              y={hasBorder ? card.style.borderWidth : 0}
-              width={w - 20}
-              height={titleHeight}
-              text={card.flags.showNumber && !card.flags.excludeFromNumbering ? `${cardNumber}. ${card.title}` : card.title}
-              fontSize={titleFontSize}
-              fontFamily={card.style.titleFont}
-              fontStyle={card.style.titleBold ? 'bold' : 'normal'}
-              fill={card.style.titleColor}
-              ellipsis
-              verticalAlign="middle"
-            />
+            {showNumber && (
+              <Text
+                x={paddingX}
+                y={hasBorder ? card.style.borderWidth + titlePaddingY + 1 : titlePaddingY + 1}
+                text={numberText}
+                fontSize={titleFontSize}
+                fontFamily={card.style.titleFont}
+                fontStyle={card.style.titleBold ? 'bold' : 'normal'}
+                fill={card.style.titleColor}
+                verticalAlign="top"
+              />
+            )}
+            {displayLines.map((line, index) => {
+              let displayText = line
+              if (index === maxTitleLines - 1 && titleLines.length > maxTitleLines) {
+                while (measureTextWidth(displayText + '…', titleFontSize, card.style.titleFont, card.style.titleBold, false) > w - paddingX * 2 - numberWidth - 1 && displayText.length > 0) {
+                  displayText = displayText.slice(0, -1)
+                }
+                displayText += '…'
+              }
+              const xPosition = showNumber ? paddingX + numberWidth + 1 : paddingX // 编号和标题之间加1px间隔
+              return (
+                <Text
+                  key={index}
+                  x={xPosition}
+                  y={hasBorder ? card.style.borderWidth + titlePaddingY + 1 + index * lineHeight : titlePaddingY + 1 + index * lineHeight}
+                  text={displayText}
+                  fontSize={titleFontSize}
+                  fontFamily={card.style.titleFont}
+                  fontStyle={card.style.titleBold ? 'bold' : 'normal'}
+                  fill={card.style.titleColor}
+                  verticalAlign="top"
+                />
+              )
+            })}
           </>
         )}
-        {!card.flags.hideBody && (
+        {!card.flags.hideBody && !card.flags.hideBodyArea && (
         <RichTextBody
             content={card.content}
-            x={10} y={hasTitle ? titleHeight + 9 : 3}
-            maxWidth={w - 20} maxHeight={h - (hasTitle ? titleHeight + 12 : 6)}
+            x={paddingX} y={hasTitle ? titleHeight + 9 : 3}
+            maxWidth={w - paddingX * 2} maxHeight={h - (hasTitle ? titleHeight + 12 : 6)}
           fontSize={bodyFontSize}
           fontFamily={card.style.bodyFont}
           defaultColor={card.style.bodyColor}
+          lineHeight={card.style.bodyLineHeight ?? 1.5}
         />
         )}
 
@@ -188,19 +228,7 @@ function CardRenderer({ card, cardNumber, isSelected, onSelect, onDragStart, onD
   )
 }
 
-function charWidth(char: string, fontSize: number): number {
-  const code = char.charCodeAt(0)
-  if ((code >= 0x4e00 && code <= 0x9fff) || (code >= 0x3000 && code <= 0x303f) || (code >= 0xff00 && code <= 0xffef)) {
-    return fontSize
-  }
-  return fontSize * 0.6
-}
 
-function estimateTextWidth(text: string, fontSize: number): number {
-  let w = 0
-  for (const c of text) w += charWidth(c, fontSize)
-  return w
-}
 
 function CanvasImage({ src, x, y, maxWidth, maxRemainingHeight, imageWidth, imageHeight }: {
   src: string
@@ -311,7 +339,7 @@ function CanvasMath({ latex, x, y, maxWidth, maxRemainingHeight, fontSize = 16 }
   return <KonvaImage image={image} x={x} y={y} width={displayW} height={displayH} />
 }
 
-function RichTextBody({ content, x, y, maxWidth, maxHeight, fontSize, fontFamily, defaultColor }: {
+function RichTextBody({ content, x, y, maxWidth, maxHeight, fontSize, fontFamily, defaultColor, lineHeight = 1.5 }: {
   content: Record<string, unknown>
   x: number
   y: number
@@ -320,12 +348,13 @@ function RichTextBody({ content, x, y, maxWidth, maxHeight, fontSize, fontFamily
   fontSize: number
   fontFamily: string
   defaultColor: string
+  lineHeight?: number
 }) {
-  const lineHeight = fontSize * 1.5
+  const actualLineHeight = fontSize * lineHeight
   const parsedLines = parseRichText(content, defaultColor, fontSize)
 
   let cy = y
-  const lh = lineHeight
+  const lh = actualLineHeight
   const elements: React.ReactNode[] = []
   let key = 0
 
@@ -376,14 +405,14 @@ function RichTextBody({ content, x, y, maxWidth, maxHeight, fontSize, fontFamily
       }
       for (const vline of visualLines) {
         if (cy + lh > y + maxHeight) break
-        const totalWidth = vline.reduce((acc, s) => acc + estimateTextWidth(s.text, s.fontSize), 0)
+        const totalWidth = vline.reduce((acc, s) => acc + measureTextWidth(s.text, s.fontSize, fontFamily, s.bold, s.italic), 0)
         let offsetX = 0
         if (align === 'center') offsetX = Math.max(0, (maxWidth - totalWidth) / 2)
         else if (align === 'right') offsetX = Math.max(0, maxWidth - totalWidth)
 
         let segX = x + offsetX
         for (const seg of vline) {
-          const segW = estimateTextWidth(seg.text, seg.fontSize)
+          const segW = measureTextWidth(seg.text, seg.fontSize, fontFamily, seg.bold, seg.italic)
           let decoration: '' | 'underline' | 'line-through' = ''
           if (seg.underline) decoration = 'underline'
           else if (seg.strikethrough) decoration = 'line-through'
@@ -432,7 +461,7 @@ function RichTextBody({ content, x, y, maxWidth, maxHeight, fontSize, fontFamily
         }
         continue
       }
-      const segW = estimateTextWidth(seg.text, seg.fontSize)
+      const segW = measureTextWidth(seg.text, seg.fontSize, fontFamily, seg.bold, seg.italic)
       if (segW <= maxWidth && currentX + segW > maxWidth) {
         visualLines.push(currentLine)
         currentLine = []
@@ -445,19 +474,19 @@ function RichTextBody({ content, x, y, maxWidth, maxHeight, fontSize, fontFamily
         let i = 0
         while (i < seg.text.length) {
           let j = i + 1
-          while (j <= seg.text.length && estimateTextWidth(seg.text.slice(i, j), seg.fontSize) <= maxWidth) {
+          while (j <= seg.text.length && measureTextWidth(seg.text.slice(i, j), seg.fontSize, fontFamily, seg.bold, seg.italic) <= maxWidth) {
             j++
           }
           j--
           if (j <= i) j = i + 1
-          if (currentX > 0 && currentX + estimateTextWidth(seg.text.slice(i, j), seg.fontSize) > maxWidth) {
+          if (currentX > 0 && currentX + measureTextWidth(seg.text.slice(i, j), seg.fontSize, fontFamily, seg.bold, seg.italic) > maxWidth) {
             visualLines.push(currentLine)
             currentLine = []
             currentX = 0
           }
           const chunk = { ...seg, text: seg.text.slice(i, j) }
           currentLine.push(chunk)
-          currentX += estimateTextWidth(chunk.text, seg.fontSize)
+          currentX += measureTextWidth(chunk.text, seg.fontSize, fontFamily, seg.bold, seg.italic)
           i = j
         }
       }
@@ -883,6 +912,9 @@ export function CanvasView() {
   const [drawingPreview, setDrawingPreview] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
   const [textInputDialog, setTextInputDialog] = useState<{ x: number; y: number; mmX: number; mmY: number } | null>(null)
   const [showPngExportDialog, setShowPngExportDialog] = useState(false)
+  const [imageLibraryOpen, setImageLibraryOpen] = useState(false)
+  const [toastMsg, setToastMsg] = useState('')
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const doExportCurrentPageRef = useRef<() => void>(() => {})
   const doExportAllAsOneRef = useRef<() => void>(() => {})
   const doExportPerPageRef = useRef<() => void>(() => {})
@@ -1028,13 +1060,13 @@ export function CanvasView() {
       }
     }
 
-    const captureRect = (rect: { x: number; y: number; w: number; h: number; pageWidthMm: number }) => {
+    const captureRect = (rect: { x: number; y: number; w: number; h: number; pageWidthMm: number }, dpi = 300) => {
       const { zoom: z, offsetX: ox, offsetY: oy } = useCanvasStore.getState()
       const sx = rect.x * z + ox
       const sy = rect.y * z + oy
       const sw = rect.w * z
       const sh = rect.h * z
-      const targetPxWidth = rect.pageWidthMm * 300 / 25.4
+      const targetPxWidth = rect.pageWidthMm * dpi / 25.4
       const pixelRatio = targetPxWidth / (rect.w * z)
       const layer = stageRef.current?.getLayers()[0]
       const guides = layer?.find('.page-guide') || []
@@ -1062,6 +1094,27 @@ export function CanvasView() {
     const handleExportPNG = () => {
       if (allPages.length === 0) return
       setShowPngExportDialog(true)
+    }
+
+    const handleOpenImageLibrary = () => {
+      setImageLibraryOpen(true)
+    }
+
+    const handleSaveToImageLibrary = () => {
+      const { selectedElementIds, elements } = usePageElementStore.getState()
+      if (selectedElementIds.length !== 1) return
+      const el = elements.find(e => e.id === selectedElementIds[0])
+      if (!el || el.type !== 'image') return
+      const src = (el.content as Record<string, unknown>).src as string
+      if (!src) return
+      useImageLibraryStore.getState().addItem({
+        name: '画布图片',
+        keywords: '',
+        dataUrl: src,
+      })
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+      setToastMsg('图片已保存到图片库')
+      toastTimerRef.current = setTimeout(() => setToastMsg(''), 1000)
     }
 
     const doExportCurrentPage = () => {
@@ -1125,7 +1178,7 @@ export function CanvasView() {
       for (const page of allPages) {
         const rect = exportPageRect(page.id)
         if (!rect) continue
-        const dataUrl = captureRect(rect)
+        const dataUrl = captureRect(rect, 600)
         images.push({ dataUrl, name: page.name })
       }
       if (images.length === 0) return
@@ -1141,10 +1194,10 @@ export function CanvasView() {
         <style>
           @page { size: A4; margin: 0; }
           @media print {
-            body { margin: 0; padding: 0; background: none; }
+            body { margin: 0; padding: 0; background: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             .page { page-break-after: always; width: 100%; box-shadow: none; background: none; }
             .page:last-child { page-break-after: auto; }
-            img { display: block; width: 100%; height: auto; }
+            img { display: block; width: 100%; height: auto; image-rendering: auto; }
           }
           body { margin: 0; padding: 0; background: #fff; }
           .page { width: 100%; background: #fff; }
@@ -1201,6 +1254,65 @@ export function CanvasView() {
       useCanvasStore.getState().zoomToFit(vpWidth, vpHeight, contentWidth, contentHeight)
     }
 
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable) {
+        return
+      }
+
+      const { selectedCardIds, cards } = useCardStore.getState()
+      const { selectedElementIds, elements } = usePageElementStore.getState()
+
+      let dx = 0
+      let dy = 0
+      const step = e.shiftKey ? 5 : 1
+
+      switch (e.key) {
+        case 'ArrowUp':
+          dy = -step
+          break
+        case 'ArrowDown':
+          dy = step
+          break
+        case 'ArrowLeft':
+          dx = -step
+          break
+        case 'ArrowRight':
+          dx = step
+          break
+        default:
+          return
+      }
+
+      e.preventDefault()
+
+      if (selectedElementIds.length > 0) {
+        for (const elementId of selectedElementIds) {
+          const element = elements.find(el => el.id === elementId)
+          if (element) {
+            updateElement(elementId, {
+              position: {
+                x: element.position.x + dx,
+                y: element.position.y + dy
+              }
+            })
+          }
+        }
+      } else if (selectedCardIds.length > 0) {
+        for (const cardId of selectedCardIds) {
+          const card = cards.find(c => c.id === cardId)
+          if (card) {
+            updateCard(cardId, {
+              position: {
+                x: card.position.x + dx,
+                y: card.position.y + dy
+              }
+            })
+          }
+        }
+      }
+    }
+
     window.addEventListener('auto-layout-h', handleAutoLayoutH)
     window.addEventListener('auto-layout-v', handleAutoLayoutV)
     window.addEventListener('scroll-to-page', handleScrollToPage)
@@ -1209,6 +1321,9 @@ export function CanvasView() {
     window.addEventListener('export-png', handleExportPNG)
     window.addEventListener('print', handlePrint)
     window.addEventListener('zoom-to-fit', handleZoomToFit)
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('open-image-library', handleOpenImageLibrary)
+    window.addEventListener('save-to-image-library', handleSaveToImageLibrary)
 
     return () => {
       window.removeEventListener('auto-layout-h', handleAutoLayoutH)
@@ -1219,6 +1334,9 @@ export function CanvasView() {
       window.removeEventListener('export-png', handleExportPNG)
       window.removeEventListener('print', handlePrint)
       window.removeEventListener('zoom-to-fit', handleZoomToFit)
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('open-image-library', handleOpenImageLibrary)
+      window.removeEventListener('save-to-image-library', handleSaveToImageLibrary)
     }
   }, [allPages, allPageCards, updateCard, currentPageId])
 
@@ -1314,8 +1432,31 @@ export function CanvasView() {
       const rawX = isDragged ? x / MM_TO_PX : card.position.x + deltaX
       const rawY = isDragged ? y / MM_TO_PX : card.position.y + deltaY
       updateCard(card.id, { position: { x: rawX, y: rawY } })
+
+      if (!isDragged) continue
+
+      const currentMeta = pageMetas.get(card.pageId)
+      if (!currentMeta) continue
+
+      const absCanvasY = currentMeta.yOffset + y
+
+      const sortedPages = [...allPages].sort((a, b) => a.order - b.order)
+      for (const page of sortedPages) {
+        const meta = pageMetas.get(page.id)
+        if (!meta) continue
+        if (absCanvasY >= meta.yOffset && absCanvasY < meta.yOffset + meta.pxHeight) {
+          if (page.id !== card.pageId) {
+            const newRelY = absCanvasY - meta.yOffset
+            updateCard(card.id, {
+              pageId: page.id,
+              position: { x: x / MM_TO_PX, y: newRelY / MM_TO_PX },
+            })
+          }
+          break
+        }
+      }
     }
-  }, [allPageCards, updateCard, selectedCardIds])
+  }, [allPageCards, updateCard, selectedCardIds, allPages])
 
   const handleDoubleClick = useCallback((id: string) => {
     openCardEditor(id)
@@ -1341,7 +1482,32 @@ export function CanvasView() {
 
   const handleElementDragEnd = useCallback((id: string, x: number, y: number) => {
     updateElement(id, { position: { x: x / MM_TO_PX, y: y / MM_TO_PX } })
-  }, [updateElement])
+
+    const { elements } = usePageElementStore.getState()
+    const element = elements.find(el => el.id === id)
+    if (!element) return
+
+    const currentMeta = pageMetas.get(element.pageId)
+    if (!currentMeta) return
+
+    const absCanvasY = currentMeta.yOffset + y
+
+    const sortedPages = [...allPages].sort((a, b) => a.order - b.order)
+    for (const page of sortedPages) {
+      const meta = pageMetas.get(page.id)
+      if (!meta) continue
+      if (absCanvasY >= meta.yOffset && absCanvasY < meta.yOffset + meta.pxHeight) {
+        if (page.id !== element.pageId) {
+          const newRelY = absCanvasY - meta.yOffset
+          updateElement(id, {
+            pageId: page.id,
+            position: { x: x / MM_TO_PX, y: newRelY / MM_TO_PX },
+          })
+        }
+        break
+      }
+    }
+  }, [updateElement, allPages, pageMetas])
 
   const handleElementTransformEnd = useCallback((id: string, x: number, y: number, w: number, h: number, rotation: number) => {
     updateElement(id, {
@@ -1563,6 +1729,11 @@ export function CanvasView() {
 
   return (
     <div className="canvas-view" ref={containerRef} onKeyDown={handleKeyDown} onPaste={handlePaste} tabIndex={0} style={{ outline: 'none' }}>
+      {toastMsg && (
+        <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 1000, background: '#4caf50', color: '#fff', padding: '8px 20px', borderRadius: 8, fontSize: 14, fontWeight: 500, boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
+          {toastMsg}
+        </div>
+      )}
       <Stage
         ref={stageRef}
         width={containerSize.width}
@@ -1764,6 +1935,25 @@ export function CanvasView() {
           </div>
         </div>
       )}
+      <ImageLibraryDialog
+        isOpen={imageLibraryOpen}
+        onClose={() => setImageLibraryOpen(false)}
+        onSelect={(dataUrl) => {
+          return new Promise<void>((resolve) => {
+            if (!currentPageId) { resolve(); return }
+            const img = new window.Image()
+            img.onload = async () => {
+              const el = await usePageElementStore.getState().addElement(currentPageId, 'image', { x: 20, y: 20 })
+              const wMm = Math.round(img.width / MM_TO_PX * 10) / 10
+              const hMm = Math.round(img.height / MM_TO_PX * 10) / 10
+              usePageElementStore.getState().updateElement(el.id, { content: { src: dataUrl }, size: { width: wMm, height: hMm } })
+              resolve()
+            }
+            img.onerror = () => resolve()
+            img.src = dataUrl
+          })
+        }}
+      />
     </div>
   )
 }

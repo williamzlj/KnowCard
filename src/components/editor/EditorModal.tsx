@@ -14,6 +14,7 @@ import { Mathematics } from '@tiptap/extension-mathematics'
 import { NodeSelection } from '@tiptap/pm/state'
 import { ContentLibraryDialog } from '../card/ContentLibraryDialog'
 import { ColorPicker } from '../color/ColorPicker'
+import { db } from '../../db/database'
 
 const ResizableImageComponent = ({ node, updateAttributes }: { node: { attrs: Record<string, unknown> }; updateAttributes: (attrs: Record<string, unknown>) => void }) => {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -92,6 +93,17 @@ const ResizableImage = Image.extend({
     return ReactNodeViewRenderer(ResizableImageComponent)
   },
 })
+
+const editorExtensions = [
+  StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
+  Underline,
+  TextAlign.configure({ types: ['heading', 'paragraph'] }),
+  TextStyle,
+  Color,
+  Highlight.configure({ multicolor: true }),
+  ResizableImage,
+  Mathematics,
+]
 
 const MenuBar = ({ editor }: { editor: ReturnType<typeof useEditor> }) => {
   if (!editor) return null
@@ -220,16 +232,30 @@ const MenuBar = ({ editor }: { editor: ReturnType<typeof useEditor> }) => {
   )
 }
 
-export function EditorModal() {
-  const { isOpen, cardId, closeEditor } = useEditorStore()
-  const { cards, updateCard, renumberCard } = useCardStore()
+function sanitizeContent(node: Record<string, unknown>): Record<string, unknown> | null {
+  if (!node || typeof node !== 'object') return node
+  const cloned = { ...node }
+  if (Array.isArray(cloned.content)) {
+    const cleaned = cloned.content
+      .map((child: unknown) => sanitizeContent(child as Record<string, unknown>))
+      .filter((child: Record<string, unknown> | null) => {
+        if (!child) return false
+        if (child.type === 'text' && (!child.text || (child.text as string).length === 0)) return false
+        return true
+      })
+    cloned.content = cleaned
+  }
+  return cloned
+}
+
+function CardEditor({ cardId, onSave, onClose }: { cardId: string; onSave: (title: string, cardName: string, cardNumber: number) => void; onClose: () => void }) {
+  const { cards, renumberCard } = useCardStore()
   const { pages } = usePageStore()
   const [title, setTitle] = useState('')
   const [cardName, setCardName] = useState('')
   const [contentLibOpen, setContentLibOpen] = useState(false)
   const [cardNumber, setCardNumber] = useState(0)
-  const overlayMouseDownRef = useRef(false)
-  const overlayRef = useRef<HTMLDivElement>(null)
+  const [initContent, setInitContent] = useState<Record<string, unknown> | null>(null)
 
   const card = cards.find(c => c.id === cardId)
 
@@ -248,64 +274,27 @@ export function EditorModal() {
   }, [cards, card, pages])
 
   useEffect(() => {
-    if (currentCardNumber > 0) setCardNumber(currentCardNumber)
-  }, [currentCardNumber])
-
-  const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        heading: { levels: [1, 2, 3] },
-      }),
-      Underline,
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      TextStyle,
-      Color,
-      Highlight.configure({ multicolor: true }),
-      ResizableImage,
-      Mathematics,
-    ],
-    content: card?.content || { type: 'doc', content: [] },
-    editorProps: {
-      handleDOMEvents: {
-        click: (view, event) => {
-          const target = event.target as HTMLElement
-          if (target.tagName === 'IMG' && target.closest('.ProseMirror')) {
-            const pos = view.posAtDOM(target, 0)
-            const $pos = view.state.doc.resolve(pos)
-            const nodeStart = $pos.start()
-            const node = view.state.doc.nodeAt(nodeStart)
-            if (node?.type.name === 'image') {
-              const tr = view.state.tr
-              tr.setSelection(NodeSelection.create(view.state.doc, nodeStart))
-              view.dispatch(tr)
-            }
-          }
-          return false
-        },
-      },
-      handlePaste: (view, event) => {
-        const items = event.clipboardData?.items
-        if (!items) return false
-        for (const item of Array.from(items)) {
-          if (item.type.startsWith('image/')) {
-            event.preventDefault()
-            const file = item.getAsFile()
-            if (!file) continue
-            const reader = new FileReader()
-            reader.onload = () => {
-              const dataUrl = reader.result as string
-              const node = view.state.schema.nodes.image.create({ src: dataUrl })
-              const tr = view.state.tr.replaceSelectionWith(node)
-              view.dispatch(tr)
-            }
-            reader.readAsDataURL(file)
-            return true
+    if (!cardId) return
+    const fetchCard = async () => {
+      try {
+        const cardData = await db.cards.get(cardId)
+        if (cardData?.content) {
+          const content = typeof cardData.content === 'string'
+            ? JSON.parse(cardData.content)
+            : cardData.content
+          if (content && typeof content === 'object' && content.type === 'doc' && Array.isArray(content.content)) {
+            const cleaned = sanitizeContent(content as Record<string, unknown>)
+            setInitContent(cleaned ?? { type: 'doc', content: [] })
+            return
           }
         }
-        return false
-      },
-    },
-  })
+        setInitContent({ type: 'doc', content: [] })
+      } catch {
+        setInitContent({ type: 'doc', content: [] })
+      }
+    }
+    fetchCard()
+  }, [cardId])
 
   useEffect(() => {
     if (card) {
@@ -315,10 +304,153 @@ export function EditorModal() {
   }, [card])
 
   useEffect(() => {
-    if (editor && card) {
-      editor.commands.setContent(card.content || { type: 'doc', content: [] })
+    if (currentCardNumber > 0) setCardNumber(currentCardNumber)
+  }, [currentCardNumber])
+
+  const editor = useEditor(
+    {
+      extensions: editorExtensions,
+      content: initContent ?? { type: 'doc', content: [] },
+      editorProps: {
+        handleDOMEvents: {
+          click: (_view: unknown, event: Event) => {
+            const target = event.target as HTMLElement
+            if (target.tagName === 'IMG' && target.closest('.ProseMirror')) {
+              const view = _view as { posAtDOM: (dom: Node, offset: number) => number; state: { doc: { resolve: (pos: number) => { start: () => number }; nodeAt: (pos: number) => { type: { name: string } | null } | null }; tr: { setSelection: (sel: unknown) => unknown } } }
+              const pos = view.posAtDOM(target, 0)
+              const $pos = view.state.doc.resolve(pos)
+              const nodeStart = $pos.start()
+              const node = view.state.doc.nodeAt(nodeStart)
+              if (node?.type.name === 'image') {
+                const tr = view.state.tr
+                tr.setSelection(NodeSelection.create(view.state.doc, nodeStart))
+                ;(view as { dispatch: (tr: unknown) => void }).dispatch(tr)
+              }
+            }
+            return false
+          },
+        },
+        handlePaste: (_view: unknown, event: ClipboardEvent) => {
+          const view = _view as { state: { schema: { nodes: { image: { create: (attrs: Record<string, unknown>) => unknown } } }; tr: { replaceSelectionWith: (node: unknown) => unknown } }; dispatch: (tr: unknown) => void }
+          const items = event.clipboardData?.items
+          if (!items) return false
+          for (const item of Array.from(items)) {
+            if (item.type.startsWith('image/')) {
+              event.preventDefault()
+              const file = item.getAsFile()
+              if (!file) continue
+              const reader = new FileReader()
+              reader.onload = () => {
+                const dataUrl = reader.result as string
+                const node = view.state.schema.nodes.image.create({ src: dataUrl })
+                const tr = view.state.tr.replaceSelectionWith(node)
+                view.dispatch(tr)
+              }
+              reader.readAsDataURL(file)
+              return true
+            }
+          }
+          return false
+        },
+      },
+    },
+    [initContent]
+  )
+
+  const handleSave = () => {
+    if (!cardId || !editor) return
+    const rawContent = editor.getJSON()
+    const content = sanitizeContent(rawContent as Record<string, unknown>) ?? { type: 'doc', content: [] }
+    useCardStore.getState().updateCard(cardId, {
+      title: title || '未命名卡片',
+      name: cardName || undefined,
+      content,
+    })
+    if (cardNumber > 0 && cardNumber !== currentCardNumber) {
+      renumberCard(cardId, cardNumber)
     }
-  }, [cardId, editor])
+    onSave(title, cardName, cardNumber)
+  }
+
+  if (!card) return null
+  if (!initContent) return <div className="modal-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300 }}><span style={{ color: 'var(--text-muted)' }}>加载中…</span></div>
+
+  return (
+    <>
+      <div style={{ padding: '12px 48px', borderBottom: '1px solid var(--border-color)' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 8 }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>卡片名称</label>
+            <input
+              type="text"
+              value={cardName}
+              onChange={(e) => setCardName(e.target.value)}
+              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', fontSize: 15 }}
+              placeholder="输入卡片名称（选填）"
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>卡片编号</label>
+            <input
+              type="number"
+              min={1}
+              value={cardNumber || ''}
+              onChange={(e) => setCardNumber(Number(e.target.value) || 0)}
+              style={{ width: 80, padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', fontSize: 15 }}
+            />
+          </div>
+        </div>
+        <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>卡片标题</label>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            style={{ flex: 1, padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', fontSize: 15 }}
+            placeholder="输入卡片标题"
+          />
+          <button
+            onClick={() => setContentLibOpen(true)}
+            style={{ padding: '8px 12px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-tertiary)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+            title="从资料库导入"
+          >
+            📋 资料库
+          </button>
+        </div>
+      </div>
+
+      {editor && <MenuBar editor={editor} />}
+
+      <div className="modal-body">
+        <EditorContent editor={editor} />
+      </div>
+
+      <div className="modal-footer">
+        <button className="btn-cancel" onClick={onClose}>取消</button>
+        <button className="btn-primary" onClick={handleSave}>保存</button>
+      </div>
+      <ContentLibraryDialog
+        isOpen={contentLibOpen}
+        onClose={() => setContentLibOpen(false)}
+        onApply={(t, c, n) => {
+            setTitle(t)
+            setCardName(n)
+            const cleaned = sanitizeContent(c as Record<string, unknown>)
+            editor?.commands.setContent(cleaned ?? { type: 'doc', content: [] })
+          }}
+        currentTitle={title}
+        currentContent={editor?.getJSON() || { type: 'doc', content: [] }}
+        currentName={cardName}
+      />
+    </>
+  )
+}
+
+export function EditorModal() {
+  const { isOpen, cardId, closeEditor } = useEditorStore()
+  const { cards } = useCardStore()
+  const overlayMouseDownRef = useRef(false)
+  const overlayRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!isOpen) return
@@ -329,19 +461,11 @@ export function EditorModal() {
     return () => window.removeEventListener('keydown', handleKey)
   }, [isOpen, closeEditor])
 
-  const handleSave = () => {
-    if (!cardId || !editor) return
-    const content = editor.getJSON()
-    updateCard(cardId, {
-      title: title || '未命名卡片',
-      name: cardName || undefined,
-      content,
-    })
-    if (cardNumber > 0 && cardNumber !== currentCardNumber) {
-      renumberCard(cardId, cardNumber)
-    }
+  const handleSave = useCallback(() => {
     closeEditor()
-  }
+  }, [closeEditor])
+
+  const card = cards.find(c => c.id === cardId)
 
   if (!isOpen || !card) return null
 
@@ -352,71 +476,7 @@ export function EditorModal() {
           <h3>编辑卡片</h3>
           <button onClick={closeEditor} style={{ fontSize: 20, padding: '0 8px' }}>×</button>
         </div>
-
-        <div style={{ padding: '12px 48px', borderBottom: '1px solid var(--border-color)' }}>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 8 }}>
-            <div style={{ flex: 1 }}>
-              <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>卡片名称</label>
-              <input
-                type="text"
-                value={cardName}
-                onChange={(e) => setCardName(e.target.value)}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', fontSize: 15 }}
-                placeholder="输入卡片名称（选填）"
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>卡片编号</label>
-              <input
-                type="number"
-                min={1}
-                value={cardNumber || ''}
-                onChange={(e) => setCardNumber(Number(e.target.value) || 0)}
-                style={{ width: 80, padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', fontSize: 15 }}
-              />
-            </div>
-          </div>
-          <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>卡片标题</label>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              style={{ flex: 1, padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', fontSize: 15 }}
-              placeholder="输入卡片标题"
-            />
-            <button
-              onClick={() => setContentLibOpen(true)}
-              style={{ padding: '8px 12px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-tertiary)', cursor: 'pointer', whiteSpace: 'nowrap' }}
-              title="从资料库导入"
-            >
-              📋 资料库
-            </button>
-          </div>
-        </div>
-
-        {editor && <MenuBar editor={editor} />}
-
-        <div className="modal-body">
-          <EditorContent editor={editor} />
-        </div>
-
-        <div className="modal-footer">
-          <button className="btn-cancel" onClick={closeEditor}>取消</button>
-          <button className="btn-primary" onClick={handleSave}>保存</button>
-        </div>
-        <ContentLibraryDialog
-          isOpen={contentLibOpen}
-          onClose={() => setContentLibOpen(false)}
-          onApply={(t, c, n) => {
-            setTitle(t)
-            setCardName(n)
-            editor?.commands.setContent(c)
-          }}
-          currentTitle={title}
-          currentContent={editor?.getJSON() || { type: 'doc', content: [] }}
-          currentName={cardName}
-        />
+        <CardEditor key={cardId} cardId={cardId} onSave={handleSave} onClose={closeEditor} />
       </div>
     </div>
   )

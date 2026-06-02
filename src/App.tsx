@@ -36,6 +36,7 @@ export default function App() {
       loadPages(currentProjectId)
       loadCards(currentProjectId)
       loadCardGroups(currentProjectId)
+      setView('main')
     }
   }, [currentProjectId, loadPages, loadCards, loadCardGroups])
 
@@ -87,7 +88,7 @@ export default function App() {
             currentUser={currentUser}
           />
         </div>
-        <ProjectManager onBack={handleGoBack} />
+        <ProjectManager />
       </div>
     )
   }

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import type { User } from '../db/database'
 
 interface AuthStore {
@@ -7,8 +8,15 @@ interface AuthStore {
   logout: () => void
 }
 
-export const useAuthStore = create<AuthStore>((set) => ({
-  currentUser: null,
-  setCurrentUser: (user) => set({ currentUser: user }),
-  logout: () => set({ currentUser: null }),
-}))
+export const useAuthStore = create<AuthStore>()(
+  persist(
+    (set) => ({
+      currentUser: null,
+      setCurrentUser: (user) => set({ currentUser: user }),
+      logout: () => set({ currentUser: null }),
+    }),
+    {
+      name: 'knowcard-auth-storage',
+    }
+  )
+)
