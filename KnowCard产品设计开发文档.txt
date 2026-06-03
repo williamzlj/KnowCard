@@ -10,14 +10,18 @@
 
 ## 目录
 
-1. [技术栈与架构
-2. 项目结构
-3. 数据库设计
-4. 数据类型定义
-5. 核心功能模块
-6. 用户界面设计
-7. 关键算法与工具函数
-8. 部署与配置
+1. [技术栈与架构](#1-技术栈与架构)
+2. [项目结构](#2-项目结构)
+3. [数据库设计](#3-数据库设计)
+4. [数据类型定义](#4-数据类型定义)
+5. [核心功能模块](#5-核心功能模块)
+6. [用户界面设计](#6-用户界面设计)
+7. [关键算法与工具函数](#7-关键算法与工具函数)
+8. [部署与配置](#8-部署与配置)
+9. [主要组件详细说明](#9-主要组件详细说明)
+10. [Zustand Stores](#10-zustand-stores)
+11. [配置文件](#11-配置文件)
+12. [重构指南](#12-重构指南)
 
 ---
 
@@ -35,11 +39,11 @@
 - **Zustand**: ^5.0.14
 
 #### 数据库
-- **Dexie.js (IndexedDB 封装): ^4.4.3
+- **Dexie.js (IndexedDB 封装)**: ^4.4.3
 
 #### UI组件库
-- **Konva / React-Konva (画布渲染): konva: ^10.3.0; react-konva: ^19.2.4
-- **TipTap (富文本编辑):
+- **Konva / React-Konva (画布渲染)**: konva: ^10.3.0; react-konva: ^19.2.4
+- **TipTap (富文本编辑)**:
   - @tiptap/react: ^3.23.6
   - @tiptap/starter-kit: ^3.23.6
   - @tiptap/extension-image: ^3.23.6
@@ -52,18 +56,18 @@
   - @tiptap/extension-underline: ^3.23.6
 
 #### 工具库
-- **KaTeX (LaTeX 公式渲染): ^0.17.0
-- **html2canvas (HTML转图片): ^1.4.1
-- **jspdf (PDF 生成): ^4.2.1
-- **uuid (ID生成): ^14.0.0
-- **lucide-react (图标库): ^1.17.0
-- **@dnd-kit (拖拽排序): ^6.3.1, ^10.0.0, ^3.2.2
+- **KaTeX (LaTeX 公式渲染)**: ^0.17.0
+- **html2canvas (HTML转图片)**: ^1.4.1
+- **jspdf (PDF 生成)**: ^4.2.1
+- **uuid (ID生成)**: ^14.0.0
+- **lucide-react (图标库)**: ^1.17.0
+- **@dnd-kit (拖拽排序)**: ^6.3.1, ^10.0.0, ^3.2.2
 
 ### 1.2 架构概览
 
 KnowCard 使用前端单页应用(SPA)架构：
 - 使用 Zustand 进行全局状态管理
-- 数据持久化使用 IndexedDB（通过 Dexie.js
+- 数据持久化使用 IndexedDB（通过 Dexie.js）
 - 画布渲染使用 Konva
 - 富文本编辑使用 TipTap
 - 公式渲染使用 KaTeX
@@ -92,9 +96,12 @@ KnowCard/
 │   │   │   ├── CropDialog.tsx
 │   │   │   └── TextInputDialog.tsx
 │   │   ├── card/         # 卡片相关组件
-│   │   │   ├── BulkCardDialog.tsx
+│   │   │   ├── BulkCardDialog.tsx    # 批量导入导出卡片
 │   │   │   ├── CardListPanel.tsx
-│   │   │   ├── ContentLibraryDialog.tsx
+│   │   │   ├── ContentLibraryDialog.tsx    # 内容资料库
+│   │   │   ├── ImageLibraryDialog.tsx      # 图片资料库
+│   │   │   ├── RegexLibraryDialog.tsx      # 正则表达式资料库
+│   │   │   ├── RegexReplaceDialog.tsx      # 正则替换工具（独立页面）
 │   │   │   ├── SizeLibraryDialog.tsx
 │   │   │   └── StyleLibraryDialog.tsx
 │   │   ├── color/        # 颜色选择器
@@ -122,9 +129,11 @@ KnowCard/
 │   │   ├── useCanvasStore.ts
 │   │   ├── useCardStore.ts
 │   │   ├── useEditorStore.ts
+│   │   ├── useImageLibraryStore.ts   # 图片库状态管理
 │   │   ├── usePageElementStore.ts
 │   │   ├── usePageStore.ts
-│   │   └── useProjectStore.ts
+│   │   ├── useProjectStore.ts
+│   │   └── useRegexLibraryStore.ts    # 正则表达式库状态管理
 │   ├── types/          # TypeScript 类型定义
 │   │   ├── card.ts
 │   │   ├── element.ts
@@ -158,10 +167,13 @@ KnowCard/
 使用 IndexedDB 数据库名称：`KnowCardDB`
 
 版本：
-- v1: 核心数据表
-- v2: 添加样式和内容预设
-- v3: 添加尺寸预设
-- v4: 添加用户系统
+- **v1**: 核心数据表
+- **v2**: 添加样式和内容预设
+- **v3**: 添加尺寸预设
+- **v4**: 添加用户系统
+- **v5**: 添加笔记关联
+- **v6**: 数据库结构优化
+- **v7**: 添加图片库和正则表达式库表
 
 ### 3.2 数据表结构
 
@@ -171,9 +183,10 @@ KnowCard/
   id: string,           // 项目ID（UUID）
   name: string,
   description: string,
-  createdAt: number,  // Unix 时间戳
+  createdAt: number,    // Unix 时间戳
   updatedAt: number
 }
+```
 索引：id, createdAt
 
 #### 2. **pages** (页面表)
@@ -221,6 +234,7 @@ KnowCard/
   createdAt: number,
   updatedAt: number
 }
+```
 索引：id, projectId, order
 
 #### 3. **cards** (卡片表)
@@ -244,7 +258,8 @@ KnowCard/
     bodyBackgroundColor: string,
     borderColor: string,
     borderWidth: number,
-    borderRadius: number
+    borderRadius: number,
+    titleHeight?: number    // 标题高度设置（v5新增）
   },
   size: {
     defaultWidth: number,
@@ -269,6 +284,7 @@ KnowCard/
   createdAt: number,
   updatedAt: number
 }
+```
 索引：id, projectId, pageId, groupId, order
 
 #### 4. **cardGroups** (卡片分组表)
@@ -280,6 +296,7 @@ KnowCard/
   color: string,
   order: number
 }
+```
 索引：id, projectId, order
 
 #### 5. **pageElements** (页面元素表)
@@ -297,6 +314,7 @@ KnowCard/
   createdAt: number,
   updatedAt: number
 }
+```
 索引：id, pageId, zIndex
 
 #### 6. **settings** (设置表)
@@ -305,6 +323,7 @@ KnowCard/
   key: string,
   value: unknown
 }
+```
 索引：key
 
 #### 7. **stylePresets** (样式预设表)
@@ -312,10 +331,11 @@ KnowCard/
 {
   id: string,
   name: string,
-  style: string,    // JSON 字符串，存储 CardStyle
+  style: string,         // JSON 字符串，存储 CardStyle
   createdAt: number,
-  pinned?: boolean
+  pinned?: boolean       // 置顶标记
 }
+```
 索引：id, createdAt
 
 #### 8. **contentPresets** (内容预设表)
@@ -327,8 +347,9 @@ KnowCard/
   content: string,
   createdAt: number,
   updatedAt: number,
-  pinned?: boolean
+  pinned?: boolean       // 置顶标记
 }
+```
 索引：id, createdAt
 
 #### 9. **cardSizePresets** (尺寸预设表)
@@ -339,8 +360,9 @@ KnowCard/
   width: number,
   height: number,
   createdAt: number,
-  pinned?: boolean
+  pinned?: boolean       // 置顶标记
 }
+```
 索引：id, createdAt
 
 #### 10. **users** (用户表)
@@ -353,7 +375,34 @@ KnowCard/
   createdAt: number,
   updatedAt: number
 }
+```
 索引：id, username, isAdmin
+
+#### 11. **imageLibrary** (图片库表) [v7新增]
+```javascript
+{
+  id: string,
+  name: string,
+  dataUrl: string,       // Base64 编码的图片数据
+  createdAt: number,
+  pinned?: boolean       // 置顶标记
+}
+```
+索引：id, createdAt
+
+#### 12. **regexPresets** (正则表达式预设表) [v7新增]
+```javascript
+{
+  id: string,
+  name: string,          // 规则名称
+  pattern: string,       // 正则表达式模式
+  replacement: string,   // 替换文本（支持 \n 等转义字符）
+  description?: string,   // 规则说明
+  createdAt: number,
+  pinned?: boolean       // 置顶标记
+}
+```
+索引：id, createdAt
 
 ### 3.3 默认管理员账号
 - 默认用户名：admin
@@ -419,6 +468,7 @@ KnowCard/
 - borderColor: string
 - borderWidth: number
 - borderRadius: number
+- titleHeight?: number    // 标题高度设置
 
 #### 5. CardSize（卡片尺寸）
 - defaultWidth: number
@@ -461,6 +511,22 @@ KnowCard/
 - isAdmin: boolean
 - createdAt: number
 - updatedAt: number
+
+#### 10. ImageLibraryItem（图片库项）
+- id: string
+- name: string
+- dataUrl: string (Base64)
+- createdAt: number
+- pinned?: boolean
+
+#### 11. RegexPreset（正则表达式预设）
+- id: string
+- name: string
+- pattern: string
+- replacement: string
+- description?: string
+- createdAt: number
+- pinned?: boolean
 
 ### 4.2 工具类型
 
@@ -543,6 +609,8 @@ const ALLOWED_FONTS = [
 - 新建/导入按钮
 - 数据库导出/导入/重置按钮（项目下方）
 - 项目卡片显示项目名、描述、更新时间
+- **图片库入口按钮**（资料库按钮旁边）
+- **正则替换入口按钮**（独立工具入口）
 
 ### 5.3 页面管理模块
 
@@ -593,23 +661,69 @@ const ALLOWED_FONTS = [
 - 支持图片插入
 - 支持文本格式化
 
+#### 卡片置顶功能
+- 卡片资料库支持置顶（固定显示在列表前面）
+- 图片库支持置顶
+- 正则表达式库支持置顶
+- 置顶项目按置顶时间排序，非置顶项目按创建时间排序
+
 ### 5.5 资料库模块
 
-#### 内容库
+#### 内容库 (ContentLibraryDialog)
 - 保存常用内容
 - 导入/导出内容
 - 应用到卡片
-- 编辑、复制、删除
+- 编辑、复制、删除、置顶
+- **卡片网格显示**：一行4列，固定高度
+- 卡片名称灰色字体，卡片名称下方分隔线
+- 操作按钮：应用、编辑、复制、置顶、删除
+- 按钮悬停效果：白色底色变为灰色底色
 
-#### 样式库
+#### 样式库 (StyleLibraryDialog)
 - 保存常用样式
 - 应用到卡片
 
-#### 尺寸库
+#### 尺寸库 (SizeLibraryDialog)
 - 保存常用尺寸
 - 应用到卡片
 
-### 5.6 画布渲染模块
+#### 图片库 (ImageLibraryDialog)
+- 图片网格显示：一行4列
+- 支持从剪贴板导入图片
+- 支持批量上传图片
+- 支持搜索图片
+- 支持复制到剪贴板
+- 支持插入到画布
+- 支持置顶
+- 支持删除
+- **搜索框清空功能**：输入关键词后显示清空图标
+- 从项目管理进入时不显示插入按钮
+
+#### 正则表达式库 (RegexLibraryDialog)
+- 正则表达式网格显示：一行4列
+- 保存正则表达式规则（名称、匹配模式、替换文本、说明）
+- 支持加载规则到替换区域
+- 支持编辑规则
+- 支持删除规则
+- 支持置顶
+
+### 5.6 正则替换工具 (RegexReplaceDialog)
+
+#### 功能
+- 独立的正则替换工具页面
+- 输入正则表达式和替换文本
+- **实时预览替换效果**
+- 显示匹配数量
+- **鼠标悬停显示匹配内容**
+- **支持将替换文本设为回车 `\n`**
+- 导出TXT文件（文件名带日期）
+- 从剪贴板导入文本
+- 合并空行功能
+- 正则表达式帮助提示
+- 正则表达式资料库集成
+- 清空规则按钮
+
+### 5.7 画布渲染模块
 
 #### 功能
 1. 页面渲染
@@ -622,21 +736,23 @@ const ALLOWED_FONTS = [
 8. 旋转
 9. 导出 PNG
 10. 打印
+11. **卡片跨页面拖拽**：拖拽时自动更新 pageId
 
-### 5.7 属性面板模块
+### 5.8 属性面板模块
 
 #### 功能
 1. 卡片属性设置
-- 标题样式（字体、字号、加粗、颜色、背景色）
-- 正文样式（字体、字号、颜色、背景色）
-- 边框样式（颜色、宽度、圆角）
-- 尺寸设置
-- 位置设置
+   - 标题样式（字体、字号、加粗、颜色、背景色）
+   - 标题高度设置
+   - 正文样式（字体、字号、颜色、背景色）
+   - 边框样式（颜色、宽度、圆角）
+   - 尺寸设置
+   - 位置设置
 
 2. 图片属性设置
-- 图片裁剪
-- 图片尺寸（转换：mm）
-- 图片透明度
+   - 图片裁剪
+   - 图片尺寸（转换：mm）
+   - 图片透明度
 
 3. 元素属性设置
 
@@ -670,9 +786,51 @@ const ALLOWED_FONTS = [
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 6.3 图标库
+### 6.3 资料库卡片布局
+
+```
+┌──────────┬──────────┬──────────┬──────────┐
+│  卡片1   │  卡片2   │  卡片3   │  卡片4   │
+│          │          │          │          │
+│ [应用]   │ [应用]   │ [应用]   │ [应用]   │
+│ [编辑]   │ [编辑]   │ [编辑]   │ [编辑]   │
+│ [复制]   │ [复制]   │ [复制]   │ [复制]   │
+│ [置顶]   │ [置顶]   │ [置顶]   │ [置顶]   │
+│ [删除]   │ [删除]   │ [删除]   │ [删除]   │
+└──────────┴──────────┴──────────┴──────────┘
+```
+
+### 6.4 正则替换工具布局
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     正则替换工具                        │
+├─────────────────────────────────────────────────────────┤
+│ 正则表达式: [输入框                           ] [?] 帮助│
+│ 替换文本:   [输入框                           ]        │
+│                                                      │
+│ [全部替换] [清空规则] [资料库]                        │
+├─────────────────────────────────────────────────────────┤
+│ 找到 N 处匹配，鼠标悬停查看匹配内容                    │
+├─────────────────────────────────────────────────────────┤
+│                    预览区域                            │
+│ ┌─────────────────────────────────────────────────┐   │
+│ │                 替换效果预览                      │   │
+│ └─────────────────────────────────────────────────┘   │
+├─────────────────────────────────────────────────────────┤
+│ [导出TXT] [从剪贴板导入] [合并空行]                    │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 6.5 图标库
 - 统一使用 lucide-react 图标库
 - 不使用 emoji
+
+### 6.6 按钮样式规范
+- 默认状态：白色底色
+- 悬停状态：灰色底色 (#f5f5f5)
+- 禁用状态：灰色文字
+- 主按钮：使用 accent-color
 
 ---
 
@@ -689,8 +847,8 @@ const PX_PER_MM = 3.779527559
 
 ### 7.2 页面尺寸计算
 
-A4 尺寸（210 × 297 mm
-A3 尺寸（297 × 420 mm
+A4 尺寸（210 × 297 mm）
+A3 尺寸（297 × 420 mm）
 横向时交换宽高
 
 ### 7.3 卡片尺寸计算
@@ -700,6 +858,7 @@ A3 尺寸（297 × 420 mm
 calcCardHeight(content, fontSize, titleFontSize, maxWidth, autoHeight, fixedHeight)
 
 标题高度：titleFontSize * 2 + 4
+```
 
 ### 7.4 富文本处理
 
@@ -720,12 +879,28 @@ calcCardHeight(content, fontSize, titleFontSize, maxWidth, autoHeight, fixedHeig
 - 计算间距
 - 分页
 
-### 7.7 数据库备份与恢复
+### 7.7 文本宽度精确测量
+
+使用 Canvas API 进行精确的文本宽度测量，解决标点符号导致的文字溢出问题：
+```javascript
+measureTextWidth(text: string, fontSize: number, fontFamily: string, bold = false, italic = false): number
+
+// 使用示例
+const width = measureTextWidth(text, 14, 'Arial', true, false)
+```
+
+### 7.8 数据库备份与恢复
 
 导出文件名格式：
-- 完整数据库：`KnowCard_完整数据库_YYYYMMDD_HHMMSS.json
+- 完整数据库：`KnowCard_完整数据库_YYYYMMDD_HHMMSS.json`
 
 重置前自动导出备份
+
+**备份包含的数据表**：
+- projects, pages, cards, cardGroups, pageElements
+- settings, stylePresets, contentPresets, cardSizePresets
+- **imageLibrary** (图片库)
+- **regexPresets** (正则表达式预设)
 
 ---
 
@@ -746,7 +921,12 @@ npm run dev
 npm run build
 ```
 
-### 8.4 代码规范
+### 8.4 GitHub Pages 部署
+```bash
+npm run deploy
+```
+
+### 8.5 代码规范
 - TypeScript 类型检查
 - ESLint 代码风格检查
 
@@ -768,6 +948,8 @@ npm run build
 - 导入项目
 - 项目列表
 - 数据库操作
+- 图片库入口
+- 正则替换入口
 
 ### 9.4 CanvasView.tsx
 画布视图组件
@@ -776,6 +958,7 @@ npm run build
 - 公式渲染
 - 元素渲染
 - 拖拽编辑
+- 跨页面拖拽支持
 
 ### 9.5 CardListPanel.tsx
 卡片列表面板
@@ -794,6 +977,37 @@ npm run build
 - TipTap 富文本编辑器
 - 公式支持
 - 图片支持
+
+### 9.8 ContentLibraryDialog.tsx
+内容资料库
+- 卡片网格显示
+- 置顶功能
+- 应用、编辑、复制、删除操作
+
+### 9.9 ImageLibraryDialog.tsx
+图片资料库
+- 图片网格显示
+- 批量上传
+- 从剪贴板导入
+- 搜索功能
+- 置顶功能
+- 插入到画布
+
+### 9.10 RegexLibraryDialog.tsx
+正则表达式资料库
+- 规则网格显示
+- 保存、加载、编辑、删除规则
+- 置顶功能
+
+### 9.11 RegexReplaceDialog.tsx
+正则替换工具
+- 独立工具页面
+- 实时预览
+- 匹配内容悬停显示
+- 导出TXT
+- 从剪贴板导入
+- 合并空行
+- 正则帮助提示
 
 ---
 
@@ -820,12 +1034,27 @@ npm run build
 ### useAuthStore
 认证状态管理
 
+### useImageLibraryStore
+图片库状态管理
+- addImage(name, dataUrl): 添加图片
+- removeImage(id): 删除图片
+- togglePin(id): 切换置顶
+- getImages(): 获取图片列表（置顶优先）
+
+### useRegexLibraryStore
+正则表达式库状态管理
+- addPreset(name, pattern, replacement, description): 添加预设
+- updatePreset(id, updates): 更新预设
+- removePreset(id): 删除预设
+- togglePin(id): 切换置顶
+- getPresets(): 获取预设列表（置顶优先）
+
 ---
 
 ## 11. 配置文件
 
 ### vite.config.ts
-Vite 构建配置
+Vite 构建配置，包含 GitHub Pages 部署配置
 
 ### tsconfig.json
 TypeScript 配置
@@ -852,17 +1081,42 @@ TypeScript 配置
 6. 用户系统
 7. 导入导出
 8. 资料库
+9. 正则替换工具
 
 ---
 
 ## 附录：关键文件说明
 
-- src/db/database.ts: 数据库定义
-- src/types/: 类型定义
-- src/stores/: 状态管理
-- src/utils/: 工具函数
+| 文件路径 | 说明 |
+|---------|------|
+| src/db/database.ts | 数据库定义，包含所有表的 schema |
+| src/db/backup.ts | 数据库备份与恢复逻辑 |
+| src/types/ | TypeScript 类型定义 |
+| src/stores/ | Zustand 状态管理 |
+| src/utils/cardSize.ts | 卡片尺寸计算和文本测量 |
+| src/utils/richText.ts | 富文本解析处理 |
+| src/utils/cardLayout.ts | 卡片布局算法 |
+| src/components/card/ImageLibraryDialog.tsx | 图片库组件 |
+| src/components/card/RegexLibraryDialog.tsx | 正则表达式库组件 |
+| src/components/card/RegexReplaceDialog.tsx | 正则替换工具组件 |
 
 ---
 
-文档版本：1.0
-最后更新：2026-06-02
+## 产品介绍
+
+### 中文介绍
+KnowCard 是一款专业的知识卡片智能排版工具，支持富文本编辑、LaTeX 公式、图片插入、自动排版等功能。用户可以创建多个项目，每个项目包含多个页面，卡片支持丰富的样式定制。内置内容库、图片库和正则表达式库，方便用户管理和复用常用内容。支持数据库导入导出和 GitHub Pages 在线部署。
+
+### English Introduction
+KnowCard is a professional knowledge card layout tool featuring rich text editing, LaTeX formula support, image insertion, and automatic layout. Users can create multiple projects with multiple pages each, with extensive card styling options. Built-in content library, image library, and regex library help manage and reuse common content. Supports database import/export and GitHub Pages deployment.
+
+### 日本語紹介
+KnowCardはプロフェッショナルなナレッジカードレイアウトツールで、リッチテキスト編集、LaTeX数式サポート、画像挿入、自動レイアウト等功能を搭載しています。ユーザーは複数のプロジェクトを作成でき、各プロジェクトに複数のページを含めることができます。カードには豊富なスタイリングオプションがあります。内置のコンテンツライブラリ、画像ライブラリ、正規表現ライブラリは、一般的なコンテンツの管理と再利用に便利です。データベースのインポート/エクスポートとGitHub Pagesデプロイメントをサポートしています。
+
+### Introduction française
+KnowCard est un outil professionnel de mise en page de cartes de connaissances, offrant l'édition de texte enrichi, la prise en charge des formules LaTeX, l'insertion d'images et la mise en page automatique. Les utilisateurs peuvent créer plusieurs projets contenant chacun plusieurs pages, avec des options de style de cartes étendues. Les bibliothèques intégrées de contenu, d'images et d'expressions régulières facilitent la gestion et la réutilisation du contenu courant. Prend en charge l'import/export de base de données et le déploiement sur GitHub Pages.
+
+---
+
+文档版本：1.1
+最后更新：2026-06-03

@@ -52,12 +52,36 @@ function CardRenderer({ card, cardNumber, isSelected, onSelect, onDragStart, onD
   const hasBorder = !card.flags.hideBorder
   const titlePaddingY = card.style.titlePaddingY ?? 4
   const paddingX = card.style.paddingX ?? 10
+  const titleNumberGap = card.style.titleNumberGap ?? 1
   
   // 计算标题的实际高度，支持最多2行
   const showNumber = card.flags.showNumber && !card.flags.excludeFromNumbering
-  const numberText = showNumber ? `${cardNumber}.` : ''
+  const numberStyle = card.style.titleNumberStyle ?? 'number-dot'
+  let numberText = ''
+  if (showNumber) {
+    switch (numberStyle) {
+      case 'number':
+        numberText = `${cardNumber}`
+        break
+      case 'number-dot':
+        numberText = `${cardNumber}.`
+        break
+      case 'number-hash':
+        numberText = `${cardNumber}# `
+        break
+      case 'number-hash-prefix':
+        numberText = `#${cardNumber} `
+        break
+      case 'number-dash':
+        numberText = `${cardNumber}-`
+        break
+      case 'number-space':
+        numberText = `${cardNumber} `
+        break
+    }
+  }
   const numberWidth = showNumber ? measureTextWidth(numberText, titleFontSize, card.style.titleFont, card.style.titleBold, false) : 0
-  const titleLines = splitTextToLines(card.title, titleFontSize, w - paddingX * 2 - numberWidth - 1) // 加1px作为编号和标题之间的小间隔
+  const titleLines = splitTextToLines(card.title, titleFontSize, w - paddingX * 2 - numberWidth - titleNumberGap)
   const maxTitleLines = 2
   const displayLines = titleLines.slice(0, maxTitleLines)
   const autoTitleHeight = hasTitle ? titleFontSize * 1.2 * displayLines.length + titlePaddingY * 2 : 0
@@ -173,15 +197,15 @@ function CardRenderer({ card, cardNumber, isSelected, onSelect, onDragStart, onD
                 verticalAlign="top"
               />
             )}
-            {displayLines.map((line, index) => {
+            {!card.flags.hideTitleText && displayLines.map((line, index) => {
               let displayText = line
               if (index === maxTitleLines - 1 && titleLines.length > maxTitleLines) {
-                while (measureTextWidth(displayText + '…', titleFontSize, card.style.titleFont, card.style.titleBold, false) > w - paddingX * 2 - numberWidth - 1 && displayText.length > 0) {
+                while (measureTextWidth(displayText + '…', titleFontSize, card.style.titleFont, card.style.titleBold, false) > w - paddingX * 2 - numberWidth - titleNumberGap && displayText.length > 0) {
                   displayText = displayText.slice(0, -1)
                 }
                 displayText += '…'
               }
-              const xPosition = showNumber ? paddingX + numberWidth + 1 : paddingX // 编号和标题之间加1px间隔
+              const xPosition = showNumber ? paddingX + numberWidth + titleNumberGap : paddingX
               return (
                 <Text
                   key={index}

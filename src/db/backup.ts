@@ -38,6 +38,29 @@ export async function exportDatabase() {
   URL.revokeObjectURL(url)
 }
 
+export async function exportUserSettings() {
+  const [settings, stylePresets, contentPresets, cardSizePresets, imageLibrary, regexPresets] =
+    await Promise.all([
+      db.settings.toArray(),
+      db.stylePresets.toArray(),
+      db.contentPresets.toArray(),
+      db.cardSizePresets.toArray(),
+      db.imageLibrary.toArray(),
+      db.regexPresets.toArray(),
+    ])
+  const data = { settings, stylePresets, contentPresets, cardSizePresets, imageLibrary, regexPresets }
+  const json = JSON.stringify(data, null, 2)
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `KnowCard_用户设置_${timestamp()}.json`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 export async function importDatabase(file: File): Promise<{ success: boolean; error?: string }> {
   try {
     const text = await file.text()

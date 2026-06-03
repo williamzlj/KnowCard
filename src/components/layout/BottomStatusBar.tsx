@@ -1,10 +1,12 @@
-import { useCanvasStore, usePageStore, useCardStore, useProjectStore } from '../../stores'
+import { useCanvasStore, usePageStore, useCardStore, useProjectStore, useUIStore } from '../../stores'
+import { Settings, X } from 'lucide-react'
 
 export function BottomStatusBar() {
   const { zoom, zoomIn, zoomOut, setZoom } = useCanvasStore()
   const { currentPageId, pages } = usePageStore()
   const { cards } = useCardStore()
   const { projects, currentProjectId } = useProjectStore()
+  const { showPropertyPanel, togglePropertyPanel } = useUIStore()
 
   const currentPage = pages.find(p => p.id === currentPageId)
   const currentPageCards = cards.filter(c => c.pageId === currentPageId)
@@ -19,17 +21,26 @@ export function BottomStatusBar() {
         <span className="statusbar-separator">|</span>
         <span>卡片数: {currentPageCards.length}</span>
       </div>
-      <div className="zoom-controls">
-        <button onClick={zoomOut} style={{ fontSize: 16, padding: '0 6px' }}>−</button>
-        <input
-          type="range"
-          min={10}
-          max={500}
-          value={Math.round(zoom * 100)}
-          onChange={(e) => setZoom(Number(e.target.value) / 100)}
-        />
-        <button onClick={zoomIn} style={{ fontSize: 16, padding: '0 6px' }}>+</button>
-        <span style={{ minWidth: 45, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
+      <div className="statusbar-right">
+        <div className="zoom-controls">
+          <button onClick={zoomOut} style={{ fontSize: 16, padding: '0 6px' }}>−</button>
+          <input
+            type="range"
+            min={10}
+            max={500}
+            value={Math.round(zoom * 100)}
+            onChange={(e) => setZoom(Number(e.target.value) / 100)}
+          />
+          <button onClick={zoomIn} style={{ fontSize: 16, padding: '0 6px' }}>+</button>
+          <span style={{ minWidth: 45, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
+        </div>
+        <button
+          onClick={togglePropertyPanel}
+          style={{ marginLeft: 12, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 4 }}
+          title={showPropertyPanel ? '隐藏属性面板' : '显示属性面板'}
+        >
+          {showPropertyPanel ? <X size={16} /> : <Settings size={16} />}
+        </button>
       </div>
     </div>
   )

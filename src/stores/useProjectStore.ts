@@ -16,6 +16,8 @@ interface ProjectStore {
   setCurrentProject: (id: string) => void
   exportProject: (id: string) => Promise<Blob>
   importProject: (blob: Blob) => Promise<void>
+  reorderProjects: (newOrder: Project[]) => Promise<void>
+  togglePin: (id: string) => Promise<void>
 }
 
 export const useProjectStore = create<ProjectStore>((set, get) => ({
@@ -24,18 +26,33 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   isLoading: false,
 
   loadProjects: async () => {
-    const projects = await db.projects.orderBy('createdAt').toArray()
+    let projects = await db.projects.orderBy('createdAt').toArray()
+    projects = projects.map((p, index) => ({
+      ...p,
+      order: p.order ?? index,
+      isPinned: p.isPinned ?? false,
+    }))
+    projects.sort((a, b) => {
+      if (a.isPinned !== b.isPinned) {
+        return a.isPinned ? -1 : 1
+      }
+      return a.order - b.order
+    })
     set({ projects })
   },
 
   createProject: async (name: string) => {
     const now = Date.now()
+    const { projects } = get()
+    const maxOrder = projects.length > 0 ? Math.max(...projects.map(p => p.order)) + 1 : 0
     const project: Project = {
       id: uuid(),
       name,
       description: '',
       createdAt: now,
       updatedAt: now,
+      order: maxOrder,
+      isPinned: false,
     }
     await db.projects.add(project)
     await get().loadProjects()
@@ -135,8 +152,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
     const now = Date.now()
     const newProjectId = uuid()
+    const { projects } = get()
+    const maxOrder = projects.length > 0 ? Math.max(...projects.map(p => p.order)) + 1 : 0
 
-    await db.projects.add({ ...data.project, id: newProjectId, createdAt: now, updatedAt: now })
+    await db.projects.add({ ...data.project, id: newProjectId, createdAt: now, updatedAt: now, order: maxOrder, isPinned: false })
 
     const pageIdMap = new Map<string, string>()
     for (const page of data.pages || []) {
@@ -165,5 +184,20 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
     await get().loadProjects()
     set({ currentProjectId: newProjectId })
+  },
+
+  reorderProjects: async (newOrder: Project[]) => {
+    for (let i = 0; i < newOrder.length; i++) {
+      await db.projects.update(newOrder[i].id, { order: i, updatedAt: Date.now() })
+    }
+    await get().loadProjects()
+  },
+
+  togglePin: async (id: string) => {
+    const project = await db.projects.get(id)
+    if (project) {
+      await db.projects.update(id, { isPinned: !project.isPinned, updatedAt: Date.now() })
+      await get().loadProjects()
+    }
   },
 }))

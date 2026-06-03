@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useProjectStore, usePageStore, useCardStore } from './stores'
+import React, { useEffect, useRef, useState } from 'react'
+import { useProjectStore, usePageStore, useCardStore, useUIStore } from './stores'
 import { TopToolbar } from './components/layout/TopToolbar'
 import { BottomStatusBar } from './components/layout/BottomStatusBar'
 import { CardListPanel } from './components/card/CardListPanel'
@@ -16,13 +16,24 @@ import './App.css'
 
 type AppView = 'login' | 'main' | 'project-manager' | 'user-settings' | 'user-management'
 
+export const ToastContext = React.createContext<{ showToast: (msg: string) => void } | undefined>(undefined)
+
 export default function App() {
   const { projects, currentProjectId, loadProjects } = useProjectStore()
   const { currentPageId, loadPages } = usePageStore()
   const { loadCards, loadCardGroups } = useCardStore()
   const { isOpen: isEditorOpen } = useEditorStore()
   const { currentUser } = useAuthStore()
+  const { showPropertyPanel } = useUIStore()
   const [view, setView] = useState<AppView>('login')
+  const [toastMsg, setToastMsg] = useState('')
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout>>()
+
+  const showToast = (msg: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    setToastMsg(msg)
+    toastTimerRef.current = setTimeout(() => setToastMsg(''), 1000)
+  }
 
   useEffect(() => {
     if (currentUser) {
@@ -112,21 +123,30 @@ export default function App() {
   }
 
   return (
-    <div className="app-layout">
-      <TopToolbar 
-        onGoToProjectManager={handleGoToProjectManager}
-        onGoToSettings={handleGoToSettings}
-        onGoToUserManagement={handleGoToUserManagement}
-        onLogout={handleLogout}
-      />
-      <div className="app-body">
-        <CardListPanel />
-        <CanvasView />
-        <PropertyPanel />
+    <ToastContext.Provider value={{ showToast }}>
+      <div className="app-layout">
+        <TopToolbar 
+          onGoToProjectManager={handleGoToProjectManager}
+          onGoToSettings={handleGoToSettings}
+          onGoToUserManagement={handleGoToUserManagement}
+          onLogout={handleLogout}
+        />
+        <div className="app-body">
+          <CardListPanel />
+          <CanvasView />
+          {showPropertyPanel && <PropertyPanel />}
+        </div>
+        <BottomStatusBar />
+        {isEditorOpen && <EditorModal />}
+        {toastMsg && (
+          <div className="toast-container">
+            <div className="toast">
+              {toastMsg}
+            </div>
+          </div>
+        )}
       </div>
-      <BottomStatusBar />
-      {isEditorOpen && <EditorModal />}
-    </div>
+    </ToastContext.Provider>
   )
 }
 

@@ -6,6 +6,8 @@ export interface CardStyle {
   titleBackgroundColor: string
   titlePaddingY: number
   titleHeight?: number
+  titleNumberGap?: number
+  titleNumberStyle?: 'number' | 'number-dot' | 'number-hash' | 'number-hash-prefix' | 'number-dash' | 'number-space'
 
   bodyFont: string
   bodyFontSize: number
@@ -33,6 +35,7 @@ export interface CardFlags {
   hideBody: boolean
   hideBodyArea: boolean
   showNumber: boolean
+  hideTitleText: boolean
   excludeFromLayout: boolean
   excludeFromNumbering: boolean
 }

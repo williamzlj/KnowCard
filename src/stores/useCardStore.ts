@@ -12,6 +12,7 @@ const defaultCardStyle: CardStyle = {
   titleColor: '#000000',
   titleBackgroundColor: '#e8f4fd',
   titlePaddingY: 4,
+  titleNumberStyle: 'number-dot',
   bodyFont: '宋体',
   bodyFontSize: 13,
   bodyColor: '#333333',
@@ -29,6 +30,7 @@ const defaultCardFlags: CardFlags = {
   hideBody: false,
     hideBodyArea: false,
     showNumber: false,
+  hideTitleText: false,
   excludeFromLayout: false,
   excludeFromNumbering: false,
 }

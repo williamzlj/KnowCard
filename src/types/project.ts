@@ -4,4 +4,6 @@ export interface Project {
   description: string
   createdAt: number
   updatedAt: number
+  order: number
+  isPinned: boolean
 }

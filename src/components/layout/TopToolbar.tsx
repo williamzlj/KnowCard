@@ -1,9 +1,11 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useContext } from 'react'
 import { useProjectStore, usePageStore, useCardStore, useCanvasStore } from '../../stores'
 import { usePageElementStore } from '../../stores/usePageElementStore'
 import { BulkCardDialog, type BulkCardDialogRef } from '../card/BulkCardDialog'
 import { PX_PER_MM } from '../../utils/cardSize'
 import { useAuthStore } from '../../stores/useAuthStore'
+import { extractPlainText } from '../../utils/richText'
+import { ToastContext } from '../../App'
 import { 
   Home, 
   FilePlus, 
@@ -27,7 +29,8 @@ import {
   LogOut,
   ChevronDown,
   Plus,
-  Database
+  Database,
+  Copy
 } from 'lucide-react'
 
 interface TopToolbarProps {
@@ -40,9 +43,11 @@ interface TopToolbarProps {
 export function TopToolbar({ onGoToProjectManager }: TopToolbarProps) {
   const { projects, currentProjectId } = useProjectStore()
   const { pages, currentPageId: pageId, createPage, deletePage } = usePageStore()
+  const { cards, selectedCardIds } = useCardStore()
   const { zoom } = useCanvasStore()
   const { activeTool } = usePageElementStore()
   const { currentUser } = useAuthStore()
+  const toastContext = useContext(ToastContext)
   
   // 下拉菜单状态
   const [pageMenuOpen, setPageMenuOpen] = useState(false)
@@ -99,6 +104,65 @@ export function TopToolbar({ onGoToProjectManager }: TopToolbarProps) {
 
   const handlePrint = () => {
     window.dispatchEvent(new CustomEvent('print'))
+  }
+
+  const handleCopyTitleAndBody = () => {
+    if (selectedCardIds.length === 0) {
+      toastContext?.showToast('请先选择卡片')
+      return
+    }
+    
+    const selectedCards = cards.filter(card => selectedCardIds.includes(card.id))
+    const texts = selectedCards.map(card => {
+      const bodyText = extractPlainText(card.content)
+      if (bodyText.trim()) {
+        return `${card.title}\n${bodyText}`
+      }
+      return card.title
+    }).filter(text => text.trim() !== '')
+    
+    const allText = texts.join('\n\n')
+    
+    if (allText) {
+      navigator.clipboard.writeText(allText).then(() => {
+        toastContext?.showToast('已复制到剪贴板')
+      }).catch(() => {
+        toastContext?.showToast('复制失败')
+      })
+    } else {
+      toastContext?.showToast('没有内容可复制')
+    }
+  }
+  
+  const handleCopyBody = () => {
+    let texts: string[] = []
+    
+    if (selectedCardIds.length > 0) {
+      // 有选中的卡片，只复制选中卡片的正文
+      const selectedCards = cards.filter(card => selectedCardIds.includes(card.id))
+      texts = selectedCards.map(card => extractPlainText(card.content)).filter(text => text.trim() !== '')
+    } else {
+      // 没有选中的卡片，复制所有卡片的标题和正文
+      texts = cards.map(card => {
+        const bodyText = extractPlainText(card.content)
+        if (bodyText.trim()) {
+          return `${card.title}\n${bodyText}`
+        }
+        return card.title
+      }).filter(text => text.trim() !== '')
+    }
+    
+    const allText = texts.join('\n\n')
+    
+    if (allText) {
+      navigator.clipboard.writeText(allText).then(() => {
+        toastContext?.showToast('已复制到剪贴板')
+      }).catch(() => {
+        toastContext?.showToast('复制失败')
+      })
+    } else {
+      toastContext?.showToast('没有内容可复制')
+    }
   }
 
   return (
@@ -211,6 +275,14 @@ export function TopToolbar({ onGoToProjectManager }: TopToolbarProps) {
             </div>
           )}
         </div>
+
+        <button onClick={handleCopyTitleAndBody} title="复制选中卡片的标题和正文" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <Clipboard size={16} />
+        </button>
+        <button onClick={handleCopyBody} title="复制正文到剪贴板" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Copy size={16} />
+          复制
+        </button>
 
         <div className="toolbar-divider" />
 
@@ -350,7 +422,7 @@ export function TopToolbar({ onGoToProjectManager }: TopToolbarProps) {
         <div className="toolbar-section">
           <button onClick={handleExportPNG} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Download size={16} />
-            导出PNG
+            PNG
           </button>
           <button onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Printer size={16} />

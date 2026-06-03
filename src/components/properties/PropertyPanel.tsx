@@ -671,22 +671,50 @@ export function PropertyPanel() {
               }} />
             </div>
           </div>
-          <div className="form-group">
-            <label>标题上下边距</label>
-            <input type="number" min={0} max={30} step={1} value={selectedCard.style.titlePaddingY ?? 4}
-              onChange={(e) => {
-                const v = Number(e.target.value)
-                for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, titlePaddingY: v } })
-              }} />
+          <div className="form-row">
+            <div className="form-group">
+              <label>标题上下边距</label>
+              <input type="number" min={0} max={30} step={1} value={selectedCard.style.titlePaddingY ?? 4}
+                onChange={(e) => {
+                  const v = Number(e.target.value)
+                  for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, titlePaddingY: v } })
+                }} />
+            </div>
+            <div className="form-group">
+              <label>编号与标题间隔</label>
+              <input type="number" min={0} max={50} step={1}
+                value={selectedCard.style.titleNumberGap ?? 1}
+                onChange={(e) => {
+                  const v = Number(e.target.value)
+                  for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, titleNumberGap: v } })
+                }} />
+            </div>
           </div>
-          <div className="form-group">
-            <label>标题高度 (mm，留空为自动)</label>
-            <input type="number" min={0} max={100} step={1} placeholder="自动"
-              value={selectedCard.style.titleHeight ?? ''}
-              onChange={(e) => {
-                const v = e.target.value === '' ? undefined : Number(e.target.value)
-                for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, titleHeight: v } })
-              }} />
+          <div className="form-row">
+            <div className="form-group">
+              <label>标题高度</label>
+              <input type="number" min={0} max={100} step={1} placeholder="自动"
+                value={selectedCard.style.titleHeight ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value === '' ? undefined : Number(e.target.value)
+                  for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, titleHeight: v } })
+                }} />
+            </div>
+            <div className="form-group">
+              <label>编号风格</label>
+              <select value={selectedCard.style.titleNumberStyle ?? 'number-dot'}
+                onChange={(e) => {
+                  const v = e.target.value as 'number' | 'number-dot' | 'number-hash' | 'number-hash-prefix' | 'number-dash' | 'number-space'
+                  for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, titleNumberStyle: v } })
+                }}>
+                <option value="number">纯数字</option>
+                <option value="number-dot">数字加符号"."</option>
+                <option value="number-hash">数字加符号"# "</option>
+                <option value="number-hash-prefix">符号# 加数字</option>
+                <option value="number-dash">数字加符号"-"</option>
+                <option value="number-space">数字加空格</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -712,7 +740,7 @@ export function PropertyPanel() {
             </div>
           </div>
           <div className="form-row">
-            <div className="form-group">
+            <div className="form-group" style={{ flex: 1 }}>
               <label>行间距</label>
               <input type="number" min={0.8} max={3.0} step={0.1} value={selectedCard.style.bodyLineHeight ?? 1.5}
                 onChange={(e) => {
@@ -720,19 +748,19 @@ export function PropertyPanel() {
                   for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, bodyLineHeight: v } })
                 }} />
             </div>
-            <div className="form-group">
-              <label>正文颜色</label>
-              <ColorPicker value={selectedCard.style.bodyColor} onChange={(color) => {
-                for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, bodyColor: color } })
-              }} />
-            </div>
-          </div>
-          <div className="form-row">
-            <div className="form-group">
-              <label>正文背景</label>
-              <ColorPicker value={selectedCard.style.bodyBackgroundColor} onChange={(color) => {
-                for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, bodyBackgroundColor: color } })
-              }} />
+            <div style={{ flex: 1, display: 'flex', gap: '8px' }}>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label>正文颜色</label>
+                <ColorPicker value={selectedCard.style.bodyColor} onChange={(color) => {
+                  for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, bodyColor: color } })
+                }} />
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label>正文背景</label>
+                <ColorPicker value={selectedCard.style.bodyBackgroundColor} onChange={(color) => {
+                  for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, bodyBackgroundColor: color } })
+                }} />
+              </div>
             </div>
           </div>
         </div>
@@ -741,16 +769,16 @@ export function PropertyPanel() {
           <h4>边框样式</h4>
           <div className="form-row">
             <div className="form-group">
-              <label>边框颜色</label>
-              <ColorPicker value={selectedCard.style.borderColor} onChange={(color) => {
-                for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, borderColor: color } })
-              }} />
-            </div>
-            <div className="form-group">
               <label>边框粗细</label>
               <input type="number" min={0} max={10} step={0.5} value={selectedCard.style.borderWidth} onChange={(e) => {
                 const v = Number(e.target.value)
                 for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, borderWidth: v } })
+              }} />
+            </div>
+            <div className="form-group">
+              <label>边框颜色</label>
+              <ColorPicker value={selectedCard.style.borderColor} onChange={(color) => {
+                for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, borderColor: color } })
               }} />
             </div>
           </div>
@@ -762,14 +790,14 @@ export function PropertyPanel() {
                 for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, borderRadius: v } })
               }} />
             </div>
-          </div>
-          <div className="form-group">
-            <label>内容左右边距</label>
-            <input type="number" min={0} max={50} step={1} value={selectedCard.style.paddingX ?? 10}
-              onChange={(e) => {
-                const v = Number(e.target.value)
-                for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, paddingX: v } })
-              }} />
+            <div className="form-group">
+              <label>内容左右边距</label>
+              <input type="number" min={0} max={50} step={1} value={selectedCard.style.paddingX ?? 10}
+                onChange={(e) => {
+                  const v = Number(e.target.value)
+                  for (const c of batchTargets) updateCard(c.id, { style: { ...c.style, paddingX: v } })
+                }} />
+            </div>
           </div>
         </div>
 
@@ -791,6 +819,15 @@ export function PropertyPanel() {
                 for (const c of batchTargets) updateCard(c.id, { flags: { ...c.flags, showNumber: v } })
               }} />
               {' '}显示编号
+            </label>
+          </div>
+          <div className="form-group">
+            <label>
+              <input type="checkbox" checked={selectedCard.flags.hideTitleText} onChange={(e) => {
+                const v = e.target.checked
+                for (const c of batchTargets) updateCard(c.id, { flags: { ...c.flags, hideTitleText: v } })
+              }} />
+              {' '}隐藏标题文字
             </label>
           </div>
           <div className="form-group">
@@ -1022,11 +1059,11 @@ export function PropertyPanel() {
         </div>
         <div className="form-row">
           <div className="form-group">
-            <label>最小横向间距 (mm)</label>
+            <label>最小左右间距 (mm)</label>
             <input type="number" min={0} value={currentPage.cardMinHSpacing} onChange={(e) => updatePageSettings({ cardMinHSpacing: Number(e.target.value) })} />
           </div>
           <div className="form-group">
-            <label>最小纵向间距 (mm)</label>
+            <label>最小上下间距 (mm)</label>
             <input type="number" min={0} value={currentPage.cardMinVSpacing} onChange={(e) => updatePageSettings({ cardMinVSpacing: Number(e.target.value) })} />
           </div>
         </div>

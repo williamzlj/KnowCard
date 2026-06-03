@@ -169,6 +169,7 @@ export function parseRichText(content: Record<string, unknown>, bodyColor: strin
 
 export function extractPlainText(content: Record<string, unknown>): string {
   if (!content || !content.content || !Array.isArray(content.content)) return ''
+  
   const walk = (node: TipTapNode): string => {
     if (node.type === 'text') return (node.text as string) || ''
     if (node.content && Array.isArray(node.content)) {
@@ -176,9 +177,53 @@ export function extractPlainText(content: Record<string, unknown>): string {
     }
     return ''
   }
-  const parts: string[] = []
+  
+  const lines: string[] = []
   for (const node of content.content as TipTapNode[]) {
-    parts.push(walk(node))
+    // 对于段落、标题等块级元素，每个都作为一行
+    if (node.type === 'paragraph' || node.type === 'heading') {
+      const lineText = walk(node)
+      if (lineText.trim()) {
+        lines.push(lineText)
+      } else {
+        // 保留空行
+        lines.push('')
+      }
+    } else if (node.type === 'bulletList' || node.type === 'orderedList') {
+      // 处理列表
+      const walkList = (listNode: TipTapNode, depth: number = 0): string[] => {
+        const listLines: string[] = []
+        const isOrdered = listNode.type === 'orderedList'
+        let itemIndex = 0
+        
+        for (const item of (listNode.content || []) as TipTapNode[]) {
+          if (item.type !== 'listItem') continue
+          const indent = '  '.repeat(depth)
+          const prefix = isOrdered ? `${indent}${itemIndex + 1}. ` : `${indent}• `
+          itemIndex++
+          
+          for (const child of (item.content || []) as TipTapNode[]) {
+            if (child.type === 'bulletList' || child.type === 'orderedList') {
+              listLines.push(...walkList(child, depth + 1))
+            } else {
+              const itemText = walk(child)
+              if (itemText.trim()) {
+                listLines.push(prefix + itemText)
+              }
+            }
+          }
+        }
+        return listLines
+      }
+      lines.push(...walkList(node))
+    } else {
+      // 其他类型的节点，尝试提取文本
+      const text = walk(node)
+      if (text.trim()) {
+        lines.push(text)
+      }
+    }
   }
-  return parts.join(' ').replace(/\s+/g, ' ').trim()
+  
+  return lines.join('\n')
 }
