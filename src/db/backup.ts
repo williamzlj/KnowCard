@@ -7,7 +7,7 @@ function timestamp(): string {
 }
 
 async function collectAllData() {
-  const [projects, pages, cards, cardGroups, pageElements, settings, stylePresets, contentPresets, cardSizePresets] =
+  const [projects, pages, cards, cardGroups, pageElements, settings, stylePresets, contentPresets, cardSizePresets, imageLibrary, regexPresets] =
     await Promise.all([
       db.projects.toArray(),
       db.pages.toArray(),
@@ -18,8 +18,10 @@ async function collectAllData() {
       db.stylePresets.toArray(),
       db.contentPresets.toArray(),
       db.cardSizePresets.toArray(),
+      db.imageLibrary.toArray(),
+      db.regexPresets.toArray(),
     ])
-  return { projects, pages, cards, cardGroups, pageElements, settings, stylePresets, contentPresets, cardSizePresets }
+  return { projects, pages, cards, cardGroups, pageElements, settings, stylePresets, contentPresets, cardSizePresets, imageLibrary, regexPresets }
 }
 
 export async function exportDatabase() {
@@ -95,7 +97,7 @@ export async function resetDatabase(): Promise<{ success: boolean; error?: strin
 
   try {
     await db.transaction('rw',
-      [db.projects, db.pages, db.cards, db.cardGroups, db.pageElements, db.settings, db.stylePresets, db.contentPresets, db.cardSizePresets],
+      [db.projects, db.pages, db.cards, db.cardGroups, db.pageElements, db.settings, db.stylePresets, db.contentPresets, db.cardSizePresets, db.imageLibrary, db.regexPresets],
       async () => {
         await Promise.all([
           db.projects.clear(),
@@ -103,6 +105,12 @@ export async function resetDatabase(): Promise<{ success: boolean; error?: strin
           db.cards.clear(),
           db.cardGroups.clear(),
           db.pageElements.clear(),
+          db.settings.clear(),
+          db.stylePresets.clear(),
+          db.contentPresets.clear(),
+          db.cardSizePresets.clear(),
+          db.imageLibrary.clear(),
+          db.regexPresets.clear(),
         ])
       })
     return { success: true }

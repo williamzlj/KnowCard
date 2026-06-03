@@ -251,16 +251,18 @@ export function ImageLibraryDialog({ isOpen, onClose, onSelect }: ImageLibraryDi
                   />
 
                   <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleSelectImage(item.dataUrl)
-                      }}
-                      title="插入到画布"
-                      style={{ flex: 1, padding: '4px 12px', fontSize: 12, border: '1px solid var(--accent-color)', borderRadius: 4, background: 'var(--accent-color)', color: '#fff', cursor: 'pointer' }}
-                    >
-                      插入
-                    </button>
+                    {onSelect && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleSelectImage(item.dataUrl)
+                        }}
+                        title="插入到画布"
+                        style={{ flex: 1, padding: '4px 12px', fontSize: 12, border: '1px solid var(--accent-color)', borderRadius: 4, background: 'var(--accent-color)', color: '#fff', cursor: 'pointer' }}
+                      >
+                        插入
+                      </button>
+                    )}
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
