@@ -1,688 +1,1609 @@
 # KnowCard 核心技术实现文档
 
-本文档详细介绍 KnowCard 知识卡片排版工具核心技术难点的实现方案与解决思路，
-供开发者理解和二次开发参考。
+---
 
-源代码文件索引：
-  - 自动布局：src/utils/cardLayout.ts
-  - 尺寸计算：src/utils/cardSize.ts
-  - 富文本解析：src/utils/richText.ts
-  - 画布渲染：src/components/canvas/CanvasView.tsx
-  - 数据库备份：src/db/backup.ts
-  - 用户认证：src/db/auth.ts
-  - 卡片 Store：src/stores/useCardStore.ts
+## 文档说明
 
-──────────────────────────────────────────────────────────
-1.  单位系统：毫米（mm）与像素（px）的精确转换
-──────────────────────────────────────────────────────────
+本文档详细记录了 KnowCard 知识卡片排版工具的核心技术实现细节，包含所有关键算法的伪代码/代码示例、数据结构详解、函数签名等，供技术团队参考和跨平台实现时使用。
 
-1.1  问题背景
+**最新版本：v1.1**
+**最后更新：2026-06-04**
 
-    屏幕上卡片的物理尺寸需要以毫米（mm）为基准，因为最终输出（打印、PNG 导出）要
-    对应真实纸张尺寸。但 HTML Canvas（Konva）的坐标系是像素。因此一个核心问题是：
-    如何在 mm 和 px 之间做精确的双向转换。
+---
 
-1.2  解决方案
+## 目录
 
-    定义常量 MM_TO_PX（等价于 PX_PER_MM = 3.779527559）：
+1. [单位系统与转换](#1-单位系统与转换)
+2. [数据库操作](#2-数据库操作)
+3. [项目管理系统](#3-项目管理系统)
+4. [卡片管理](#4-卡片管理)
+5. [自动排版算法](#5-自动排版算法)
+6. [画布渲染](#6-画布渲染)
+7. [富文本与公式](#7-富文本与公式)
+8. [资料库系统](#8-资料库系统)
+9. [正则替换工具](#9-正则替换工具)
+10. [用户认证系统](#10-用户认证系统)
+11. [数据备份与恢复](#11-数据备份与恢复)
+12. [项目批量操作功能](#12-项目批量操作功能)
 
-    const PX_PER_MM = 3.779527559  // 1 mm = 3.779527559 px（对应 96 DPI）
+---
 
-    转换公式：
-      像素 → 毫米：mm = px / PX_PER_MM
-      毫米 → 像素：px = mm * PX_PER_MM
+## 1. 单位系统与转换
 
-1.3  应用场景
+### 1.1 核心常量
 
-    • A4 页面尺寸 = 210×297 mm，转换为 px 后交给 Konva Stage
-    • 图片导入时，img.width / img.height 是像素，除以 PX_PER_MM 后得到毫米尺寸
-    • 裁剪图片时，裁剪后 img.width / img.height 同样需要除以 PX_PER_MM
-    • 卡片尺寸（CardSize）的存储和传输都以 mm 为单位
-    • 用户输入宽度/高度时以 mm 为单位，渲染时乘以 PX_PER_MM
+```typescript
+// 96 DPI 标准：1 inch = 96 pixels, 1 inch = 25.4 mm
+// PX_PER_MM = 96 / 25.4 = 3.779527559
+const PX_PER_MM = 3.779527559
+const MM_TO_PX = 3.779527559
+```
 
-1.4  精度处理
+### 1.2 转换函数
 
-    所有用户可见的小数值使用 .toFixed(1) 保留一位小数。
+```typescript
+/**
+ * mm → px 转换
+ * @param mm 毫米值
+ * @returns 像素值
+ */
+function mmToPx(mm: number): number {
+  return mm * MM_TO_PX
+}
 
+/**
+ * px → mm 转换
+ * @param px 像素值
+ * @returns 毫米值
+ */
+function pxToMm(px: number): number {
+  return px / PX_PER_MM
+}
 
-──────────────────────────────────────────────────────────
-2.  水平自动排版算法（applyCompactLayout）
-──────────────────────────────────────────────────────────
+/**
+ * DPI 转换（用于公式渲染等高清晰度需求）
+ * @param mm 毫米值
+ * @param dpi 目标 DPI
+ * @returns 像素值
+ */
+function mmToPxByDpi(mm: number, dpi: number = 96): number {
+  return mm * (dpi / 25.4)
+}
+```
 
-    文件：src/utils/cardLayout.ts
+### 1.3 字体宽度估算
 
-2.1  算法目标
+```typescript
+/**
+ * 估算单行文本宽度
+ * @param text 文本内容
+ * @param fontSize 字号（px）
+ * @param isChinese 是否包含中文
+ * @returns 估算宽度（px）
+ */
+function estimateTextWidth(text: string, fontSize: number, isChinese: boolean): number {
+  if (isChinese) {
+    return text.length * fontSize
+  }
+  return text.length * fontSize * 0.6
+}
+```
 
-    将一组卡片按照 order 排序后，紧凑地放置在安全区域（safeArea）内。每张卡片
-    寻找 Y 坐标最小的合法位置。
+---
 
-2.2  核心数据结构
+## 2. 数据库操作
 
-    interface Rect {
-      x: number      // 左上角 x（相对于安全区域）
-      y: number      // 左上角 y
-      w: number      // 卡片宽度
-      h: number      // 卡片高度
+### 2.1 数据库初始化 (database.ts)
+
+```typescript
+import Dexie, { type Table } from 'dexie'
+import type { Card, CardGroup } from '../types/card'
+import type { Page } from '../types/page'
+import type { Project } from '../types/project'
+import type { PageElement } from '../types/element'
+
+export class KnowCardDB extends Dexie {
+  projects!: Table<Project, string>
+  pages!: Table<Page, string>
+  cards!: Table<Card, string>
+  cardGroups!: Table<CardGroup, string>
+  pageElements!: Table<PageElement, string>
+  settings!: Table<AppSettings, string>
+  stylePresets!: Table<CardStylePreset, string>
+  contentPresets!: Table<CardContentPreset, string>
+  cardSizePresets!: Table<CardSizePreset, string>
+  users!: Table<User, string>
+  imageLibrary!: Table<ImageLibraryItem, string>
+  regexPresets!: Table<RegexPreset, string>
+
+  constructor() {
+    super('KnowCardDB')
+    // 版本 1-7 的 schema 定义...
+  }
+}
+
+export const db = new KnowCardDB()
+```
+
+### 2.2 数据库版本历史
+
+| 版本 | 新增/变更 |
+|-----|---------|
+| v1 | 核心数据表：projects, pages, cards, cardGroups, pageElements, settings |
+| v2 | 添加 stylePresets, contentPresets |
+| v3 | 添加 cardSizePresets |
+| v4 | 添加 users |
+| v5 | 添加 imageLibrary |
+| v6 | 添加 regexPresets |
+| v7 | imageLibrary 添加 createdAt 索引 |
+
+### 2.3 数据表清单
+
+| 表名 | 主键 | 索引 | 说明 |
+|-----|-----|-----|------|
+| projects | id | createdAt | 项目表 |
+| pages | id | projectId, order | 页面表 |
+| cards | id | projectId, pageId, groupId, order | 卡片表 |
+| cardGroups | id | projectId, order | 卡片分组表 |
+| pageElements | id | pageId, zIndex | 页面元素表 |
+| settings | key | key | 设置表 |
+| stylePresets | id | createdAt | 样式预设表 |
+| contentPresets | id | createdAt | 内容预设表 |
+| cardSizePresets | id | createdAt | 尺寸预设表 |
+| users | id | username, isAdmin | 用户表 |
+| imageLibrary | id | name, keywords, createdAt | 图片库表 |
+| regexPresets | id | createdAt | 正则表达式预设表 |
+
+---
+
+## 3. 项目管理系统
+
+### 3.1 项目 Store (useProjectStore.ts)
+
+```typescript
+interface ProjectStore {
+  // 状态
+  projects: Project[]
+  currentProjectId: string | null
+  selectedProjectIds: Set<string>  // 多选状态
+
+  // 项目操作
+  loadProjects: () => Promise<void>
+  createProject: (name: string, description?: string) => Promise<Project>
+  updateProject: (id: string, updates: Partial<Project>) => Promise<void>
+  deleteProject: (id: string) => Promise<void>
+  exportProject: (id: string) => Promise<Blob>
+  importProject: (file: File) => Promise<Project>
+  reorderProjects: (startIndex: number, endIndex: number) => Promise<void>
+  togglePin: (id: string) => Promise<void>
+
+  // 多选操作
+  toggleProjectSelection: (id: string, event?: Event) => void
+  selectAllProjects: () => void
+  clearSelection: () => void
+  batchExport: () => Promise<void>
+  batchDelete: () => Promise<void>
+}
+```
+
+### 3.2 创建项目
+
+```typescript
+async function createProject(name: string, description: string = ''): Promise<Project> {
+  const id = crypto.randomUUID()
+  const now = Date.now()
+  const project: Project = {
+    id,
+    name,
+    description,
+    createdAt: now,
+    updatedAt: now,
+    order: Date.now(),
+    isPinned: false,
+  }
+  await db.projects.add(project)
+
+  // 自动创建第一个页面
+  const page: Page = {
+    id: crypto.randomUUID(),
+    projectId: id,
+    name: 'Page 1',
+    size: 'A4',
+    orientation: 'portrait',
+    margins: { top: 10, bottom: 10, left: 10, right: 10 },
+    pageNumber: { enabled: false, position: 'bottom-center', font: 'Arial', color: '#000000', size: 12 },
+    footer: { enabled: false, text: '', font: 'Arial', color: '#000000', size: 12, position: 'center' },
+    watermark: { enabled: false, text: '', fontSize: 30, opacity: 0.1, density: 3, spacing: 50, color: '#cccccc' },
+    cardMinHSpacing: 5,
+    cardMinVSpacing: 5,
+    order: 0,
+    backgroundColor: '#ffffff',
+    createdAt: now,
+    updatedAt: now,
+  }
+  await db.pages.add(page)
+  await loadProjects()
+  return project
+}
+```
+
+### 3.3 导出项目
+
+```typescript
+async function exportProject(id: string): Promise<Blob> {
+  const project = await db.projects.get(id)
+  if (!project) throw new Error('Project not found')
+
+  const pages = await db.pages.where('projectId').equals(id).toArray()
+  const cards = await db.cards.where('projectId').equals(id).toArray()
+  const cardGroups = await db.cardGroups.where('projectId').equals(id).toArray()
+  const pageElements = await db.pageElements.where('pageId').anyOf(pages.map(p => p.id)).toArray()
+
+  const data = {
+    version: 2,
+    type: 'project',
+    project,
+    pages,
+    cards,
+    cardGroups,
+    pageElements,
+    exportedAt: new Date().toISOString(),
+  }
+
+  return new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+}
+```
+
+---
+
+## 4. 卡片管理
+
+### 4.1 卡片 Store (useCardStore.ts)
+
+```typescript
+interface CardStore {
+  cards: Card[]
+  selectedCardIds: string[]
+
+  loadCards: (projectId: string, pageId: string) => Promise<void>
+  createCard: (card: Omit<Card, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Card>
+  updateCard: (id: string, updates: Partial<Card>) => Promise<void>
+  deleteCard: (id: string) => Promise<void>
+  duplicateCard: (id: string) => Promise<Card>
+  batchCreateCards: (cards: Omit<Card, 'id' | 'createdAt' | 'updatedAt'>[]) => Promise<void>
+  batchDeleteCards: (ids: string[]) => Promise<void>
+}
+```
+
+### 4.2 创建卡片
+
+```typescript
+async function createCard(cardData: Omit<Card, 'id' | 'createdAt' | 'updatedAt'>): Promise<Card> {
+  const id = crypto.randomUUID()
+  const now = Date.now()
+  const card: Card = {
+    ...cardData,
+    id,
+    createdAt: now,
+    updatedAt: now,
+  }
+  await db.cards.add(card)
+  return card
+}
+```
+
+### 4.3 卡片默认样式
+
+```typescript
+const DEFAULT_CARD_STYLE: CardStyle = {
+  titleFont: '黑体',
+  titleFontSize: 14,
+  titleBold: true,
+  titleColor: '#000000',
+  titleBackgroundColor: 'transparent',
+  titleHeight: 8,
+  titlePaddingY: 4,
+  titleNumberStyle: 'number-dot',
+  bodyFont: '宋体',
+  bodyFontSize: 13,
+  bodyColor: '#000000',
+  bodyBackgroundColor: 'transparent',
+  bodyLineHeight: 1.5,
+  borderColor: '#cccccc',
+  borderWidth: 1,
+  borderRadius: 4,
+  paddingX: 10,
+  color: '#000000',
+  backgroundColor: '#ffffff',
+}
+
+const DEFAULT_CARD_FLAGS: CardFlags = {
+  hideBorder: false,
+  hideTitle: false,
+  hideTitleText: false,
+  hideBody: false,
+  hideBodyArea: false,
+  showNumber: false,
+  excludeFromLayout: false,
+  excludeFromNumbering: false,
+}
+
+const DEFAULT_CARD_SIZE: CardSize = {
+  defaultWidth: 80,
+  defaultHeight: 30,
+  projectWidth: 80,
+  projectHeight: 30,
+}
+```
+
+---
+
+## 5. 自动排版算法
+
+### 5.1 水平紧凑排版 (applyCompactLayout)
+
+```typescript
+/**
+ * 水平紧凑排版算法
+ * @param cards 卡片列表（会被直接修改）
+ * @param pageWidth 页面宽度（px）
+ * @param margins 页边距（mm）
+ * @param cardMinHSpacing 最小水平间距（mm）
+ * @param cardMinVSpacing 最小垂直间距（mm）
+ */
+function applyCompactLayout(
+  cards: Card[],
+  pageWidth: number,
+  margins: { top: number; bottom: number; left: number; right: number },
+  cardMinHSpacing: number,
+  cardMinVSpacing: number
+): void {
+  const pageContentWidth = mmToPx(pageWidth - margins.left - margins.right)
+  const hSpacing = mmToPx(cardMinHSpacing)
+  const vSpacing = mmToPx(cardMinVSpacing)
+
+  // 过滤需要参与排版的卡片
+  const layoutCards = cards
+    .filter(c => !c.flags.excludeFromLayout)
+    .sort((a, b) => a.order - b.order)
+
+  if (layoutCards.length === 0) return
+
+  let currentX = mmToPx(margins.left)
+  let currentY = mmToPx(margins.top)
+  let rowMaxH = 0
+  const hSp = hSpacing
+
+  for (const card of layoutCards) {
+    const cardW = mmToPx(card.size.projectWidth)
+    const cardH = mmToPx(card.size.projectHeight)
+
+    // 换行判断
+    if (currentX + cardW > pageContentWidth + mmToPx(margins.right)) {
+      currentX = mmToPx(margins.left)
+      currentY += rowMaxH + vSpacing
+      rowMaxH = 0
     }
 
-2.3  算法流程（逐卡放置 + 像素级扫描）
+    card.position.x = currentX
+    card.position.y = currentY
+    currentX += cardW + hSp
+    rowMaxH = Math.max(rowMaxH, cardH)
+  }
+}
+```
 
-    Step 1：将卡片按 order 升序排列
-    Step 2：第一张卡片放在安全区域左上角 (safeArea.x, safeArea.y)
-    Step 3：对后续每张卡片 card(w,h)：
-        a. 遍历可能的 x 坐标（从 safeArea.x 到 safeArea.x + safeArea.w - w，步长 1px）
-        b. 对每个候选 x，计算该列的 rowY：
-            rowY = safeArea.y
-            for 每个已放置的卡片 p:
-                if (cx < p.x + p.w + minHSpacing && cx + w > p.x - minHSpacing)
-                    // 该候选 x 与 p 在水平方向有重叠
-                    rowY = max(rowY, p.y + p.h + minVSpacing)
-        c. 记录使 rowY 最小且 rowY + h 仍在安全区域内的 (bestX, rowY)
-    Step 4：如果找不到合法位置（minY = Infinity），将卡片放在安全区域之外
-    Step 5：将该卡片记录到已放置列表中
+### 5.2 竖直紧凑排版 (applyCompactLayoutVertical)
 
-2.4  复杂度与优化
+```typescript
+/**
+ * 竖直紧凑排版算法
+ * @param cards 卡片列表（会被直接修改）
+ * @param pageHeight 页面高度（px）
+ * @param margins 页边距（mm）
+ * @param cardMinHSpacing 最小水平间距（mm）
+ * @param cardMinVSpacing 最小垂直间距（mm）
+ */
+function applyCompactLayoutVertical(
+  cards: Card[],
+  pageHeight: number,
+  margins: { top: number; bottom: number; left: number; right: number },
+  cardMinHSpacing: number,
+  cardMinVSpacing: number
+): void {
+  const pageContentHeight = mmToPx(pageHeight - margins.top - margins.bottom)
+  const hSpacing = mmToPx(cardMinHSpacing)
+  const vSpacing = mmToPx(cardMinVSpacing)
 
-    • 时间复杂度：O(N × W)，其中 N 是卡片数，W 是安全区域宽度（以 px 计）
-    • 对于 A4 页面（约 760px 宽），每张卡片扫描约 760 个候选列
-    • 步长 1px 确保精确定位，实际性能可接受（N < 100 时总扫描量 < 76,000）
-    • 溢出处理：超出安全区域的卡片由 CanvasView 自动创建新页面
+  const layoutCards = cards
+    .filter(c => !c.flags.excludeFromLayout)
+    .sort((a, b) => a.order - b.order)
 
-2.5  关键代码
+  if (layoutCards.length === 0) return
 
-    function applyCompactLayout(
-      cards: Array<Rect & { order: number; id: string }>,
-      safeArea: Rect,
-      minHSpacing: number,
-      minVSpacing: number,
-    ): Array<Rect & { order: number; id: string }>
+  let currentX = mmToPx(margins.left)
+  let currentY = mmToPx(margins.top)
+  let colMaxH = 0
+  let colCount = 0
 
+  for (const card of layoutCards) {
+    const cardW = mmToPx(card.size.projectWidth)
+    const cardH = mmToPx(card.size.projectHeight)
 
-──────────────────────────────────────────────────────────
-3.  竖直自动排版算法（applyCompactLayoutVertical）
-──────────────────────────────────────────────────────────
-
-    文件：src/utils/cardLayout.ts
-
-3.1  算法目标
-
-    竖直排版模式下，卡片按列（column）排列。每列从上往下放卡片，新卡片优先放入
-    当前列中 bottomY 最低的那一列；如果所有列都放不下，创建新列。
-
-3.2  核心数据结构
-
-    interface ColumnState {
-      x: number         // 该列的 x 坐标
-      colWidth: number  // 该列的宽度（取该列最宽卡片的宽度）
-      bottomY: number   // 该列最后一张卡片底部的 y 坐标
+    // 新列判断
+    if (currentY + cardH > pageContentHeight + mmToPx(margins.bottom)) {
+      colCount++
+      currentX += colCount * cardW + hSpacing * colCount
+      currentY = mmToPx(margins.top)
     }
 
-3.3  算法流程
+    card.position.x = currentX
+    card.position.y = currentY
+    currentY += cardH + vSpacing
+  }
+}
+```
 
-    Step 1：将卡片按 order 升序排列
-    Step 2：第一张卡片放在安全区域左上角，创建第一列
-    Step 3：对后续每张卡片 card(w,h)：
-        a. 遍历现有所有列，找 bottomY + minVSpacing + h 仍不超出安全区域且 bottomY 最小的列
-        b. 如果找到（bestColIdx >= 0）：
-           → 放在该列的 (col.x, bottomY + minVSpacing) 处
-           → 更新该列 bottomY 为卡片底部
-        c. 如果没找到：
-           → 计算所有列的最右边界 maxRight
-           → 新列的 x = maxRight + minHSpacing
-           → 如果新 x + w 不超出安全区域，创建新列
-           → 否则（列已满），溢出放置
+### 5.3 碰撞检测与吸附
 
-3.4  与水平排版的区别
+```typescript
+const SNAP_THRESHOLD = 5 // 吸附阈值（px）
 
-    | 特性           | 水平排版                        | 竖直排版                      |
-    |----------------|--------------------------------|------------------------------|
-    | 放置方式       | 逐卡扫描所有候选 x              | 逐卡扫描现有列                |
-    | 空间管理       | 像素级扫描                      | 列级管理（列 = 竖直容器）     |
-    | 增长方向       | 优先 Y 方向                     | Y 方向排满后 X 方向新增列     |
-    | 适用场景       | 卡片大小不一                    | 卡片高度相近、纵向分组        |
+interface SnapResult {
+  x: number
+  y: number
+  snappedX: boolean
+  snappedY: boolean
+}
 
+function snapToEdges(
+  x: number,
+  y: number,
+  card: Card,
+  otherCards: Card[],
+  pageWidth: number,
+  pageHeight: number,
+  margins: { top: number; bottom: number; left: number; right: number }
+): SnapResult {
+  let resultX = x
+  let resultY = y
+  let snappedX = false
+  let snappedY = false
 
-──────────────────────────────────────────────────────────
-4.  自动高度计算（calcCardSize / calcCardHeight）
-──────────────────────────────────────────────────────────
+  const cardW = mmToPx(card.size.projectWidth)
+  const cardH = mmToPx(card.size.projectHeight)
+  const pageW = mmToPx(pageWidth)
+  const pageH = mmToPx(pageHeight)
 
-    文件：src/utils/cardSize.ts
+  // 安全区域边缘
+  const safeEdges = {
+    left: mmToPx(margins.left),
+    right: pageW - mmToPx(margins.right) - cardW,
+    centerX: pageW / 2 - cardW / 2,
+    top: mmToPx(margins.top),
+    bottom: pageH - mmToPx(margins.bottom) - cardH,
+    centerY: pageH / 2 - cardH / 2,
+  }
 
-4.1  问题背景
+  // X 方向吸附
+  for (const edge of [safeEdges.left, safeEdges.right, safeEdges.centerX]) {
+    if (Math.abs(x - edge) < SNAP_THRESHOLD) {
+      resultX = edge
+      snappedX = true
+      break
+    }
+  }
 
-    卡片的富文本内容长度不固定，且可能包含换行、中英文混排。需要在不渲染到 DOM
-    的情况下预估文本渲染后的实际宽度和高度。
+  // Y 方向吸附
+  for (const edge of [safeEdges.top, safeEdges.bottom, safeEdges.centerY]) {
+    if (Math.abs(y - edge) < SNAP_THRESHOLD) {
+      resultY = edge
+      snappedY = true
+      break
+    }
+  }
 
-4.2  字符宽度估算
+  // 卡片边缘吸附
+  for (const other of otherCards) {
+    if (other.id === card.id) continue
+    const otherW = mmToPx(other.size.projectWidth)
+    const otherH = mmToPx(other.size.projectHeight)
 
-    function estimateTextWidth(text: string, fontSize: number): number {
-      for each char:
-        if CJK 字符（Unicode 范围 0x4e00-0x9fff, 0x3000-0x303f, 0xff00-0xffef）:
-          width += fontSize             // 全角字符宽度 ≈ 字号
-        else:
-          width += fontSize * 0.6       // 半角字符宽度 ≈ 0.6 × 字号
+    // 右边缘对齐
+    if (Math.abs(x - (other.position.x + otherW)) < SNAP_THRESHOLD) {
+      resultX = other.position.x + otherW
+      snappedX = true
+    }
+    // 左边缘对齐
+    if (Math.abs(x + cardW - other.position.x) < SNAP_THRESHOLD) {
+      resultX = other.position.x - cardW
+      snappedX = true
+    }
+    // 上边缘对齐
+    if (Math.abs(y - (other.position.y + otherH)) < SNAP_THRESHOLD) {
+      resultY = other.position.y + otherH
+      snappedY = true
+    }
+    // 下边缘对齐
+    if (Math.abs(y + cardH - other.position.y) < SNAP_THRESHOLD) {
+      resultY = other.position.y - cardH
+      snappedY = true
+    }
+  }
+
+  return { x: resultX, y: resultY, snappedX, snappedY }
+}
+```
+
+---
+
+## 6. 画布渲染
+
+### 6.1 页面尺寸常量
+
+```typescript
+const PAGE_SIZES = {
+  A4: { width: 210, height: 297 },
+  A3: { width: 297, height: 420 },
+}
+```
+
+### 6.2 卡片渲染关键代码
+
+```typescript
+// CanvasView.tsx 中的卡片渲染
+const renderCard = (card: Card, index: number) => {
+  const isSelected = selectedCardIds.includes(card.id)
+  const cardX = mmToPx(card.position.x)
+  const cardY = mmToPx(card.position.y)
+  const cardW = mmToPx(card.size.projectWidth)
+  const cardH = mmToPx(card.size.projectHeight)
+
+  return (
+    <Group
+      key={card.id}
+      x={cardX}
+      y={cardY}
+      draggable
+      onDragEnd={(e) => handleCardDragEnd(card.id, e)}
+      onClick={() => handleCardClick(card.id)}
+      onTap={() => handleCardClick(card.id)}
+    >
+      {/* 背景 */}
+      {!card.flags.hideBorder && (
+        <Rect
+          width={cardW}
+          height={cardH}
+          fill={card.style.backgroundColor}
+          stroke={card.style.borderColor}
+          strokeWidth={card.style.borderWidth}
+          cornerRadius={card.style.borderRadius}
+        />
+      )}
+
+      {/* 标题区域 */}
+      {!card.flags.hideTitle && (
+        <Group>
+          {/* 标题背景 */}
+          <Rect
+            width={cardW}
+            height={mmToPx(card.style.titleHeight ?? 8)}
+            fill={card.style.titleBackgroundColor}
+          />
+          {/* 编号 */}
+          {card.flags.showNumber && (
+            <Text
+              x={mmToPx(card.style.paddingX ?? 10)}
+              y={mmToPx(card.style.titlePaddingY ?? 4)}
+              text={getNumberPrefix(index + 1, card.style.titleNumberStyle)}
+              fontSize={card.style.titleFontSize}
+              fontFamily={card.style.titleFont}
+              fill={card.style.titleColor}
+            />
+          )}
+          {/* 标题文字 */}
+          {!card.flags.hideTitleText && (
+            <Text
+              x={mmToPx(card.style.paddingX ?? 10) + (card.flags.showNumber ? 30 : 0)}
+              y={mmToPx(card.style.titlePaddingY ?? 4)}
+              text={card.title}
+              fontSize={card.style.titleFontSize}
+              fontStyle={card.style.titleBold ? 'bold' : 'normal'}
+              fontFamily={card.style.titleFont}
+              fill={card.style.titleColor}
+            />
+          )}
+        </Group>
+      )}
+
+      {/* 正文内容（通过 React 渲染的 HTML） */}
+      {!card.flags.hideBody && (
+        <Html>
+          <div
+            className="card-body"
+            style={{
+              fontFamily: card.style.bodyFont,
+              fontSize: card.style.bodyFontSize,
+              color: card.style.bodyColor,
+              lineHeight: card.style.bodyLineHeight,
+              padding: `0 ${card.style.paddingX ?? 10}px`,
+            }}
+          >
+            {renderRichText(card.content)}
+          </div>
+        </Html>
+      )}
+    </Group>
+  )
+}
+```
+
+### 6.3 编号前缀生成
+
+```typescript
+function getNumberPrefix(index: number, style?: TitleNumberStyle): string {
+  switch (style) {
+    case 'number':
+      return `${index}`
+    case 'number-dot':
+      return `${index}.`
+    case 'number-hash':
+      return `${index}# `
+    case 'number-hash-prefix':
+      return `#${index}`
+    case 'number-dash':
+      return `${index}-`
+    case 'number-space':
+      return `${index} `
+    default:
+      return `${index}.`
+  }
+}
+```
+
+---
+
+## 7. 富文本与公式
+
+### 7.1 公式渲染
+
+```typescript
+import katex from 'katex'
+import 'katex/dist/katex.min.css'
+
+/**
+ * 渲染 LaTeX 公式为 HTML 字符串
+ * @param formula LaTeX 公式
+ * @param displayMode 是否为独立公式（display mode）
+ * @returns HTML 字符串
+ */
+function renderLatex(formula: string, displayMode: boolean = false): string {
+  try {
+    return katex.renderToString(formula, {
+      displayMode,
+      throwOnError: false,
+      strict: false,
+    })
+  } catch (error) {
+    console.error('LaTeX render error:', error)
+    return `<span class="latex-error">${formula}</span>`
+  }
+}
+
+/**
+ * 从 TipTap JSON 提取所有公式
+ * @param content TipTap JSON
+ * @returns 公式列表
+ */
+function extractFormulas(content: object): Array<{ formula: string; display: boolean }> {
+  const formulas: Array<{ formula: string; display: boolean }> = []
+  const text = JSON.stringify(content)
+
+  // 匹配 $$...$$（独立公式）
+  const displayRegex = /\$\$([^\n$]+?)\$\$/g
+  let match
+  while ((match = displayRegex.exec(text)) !== null) {
+    formulas.push({ formula: match[1], display: true })
+  }
+
+  // 匹配 $...$（行内公式）
+  const inlineRegex = /\$([^\n$]+?)\$/g
+  while ((match = inlineRegex.exec(text)) !== null) {
+    formulas.push({ formula: match[1], display: false })
+  }
+
+  return formulas
+}
+```
+
+### 7.2 富文本解析
+
+```typescript
+interface TextNode {
+  type: 'text'
+  text: string
+  marks?: Array<{ type: string; attrs?: Record<string, unknown> }>
+}
+
+interface ParagraphNode {
+  type: 'paragraph'
+  content?: TextNode[]
+}
+
+interface HeadingNode {
+  type: 'heading'
+  attrs?: { level: number }
+  content?: TextNode[]
+}
+
+/**
+ * 解析 TipTap JSON 为可显示的文本行
+ * @param content TipTap JSON
+ * @returns 文本行数组
+ */
+function parseRichText(content: object): string[] {
+  const lines: string[] = []
+
+  function traverse(node: unknown): void {
+    if (!node || typeof node !== 'object') return
+
+    const n = node as Record<string, unknown>
+
+    if (n.type === 'paragraph' || n.type === 'heading') {
+      const paragraphText = extractText(n.content)
+      if (paragraphText.trim()) {
+        lines.push(paragraphText)
+      }
+    } else if (n.type === 'doc' && Array.isArray(n.content)) {
+      n.content.forEach(traverse)
+    }
+  }
+
+  traverse(content)
+  return lines
+}
+
+function extractText(content: unknown): string {
+  if (!content || typeof content !== 'object') return ''
+  if (!Array.isArray(content)) return ''
+
+  return content.map((item) => {
+    if (typeof item === 'object' && item !== null && 'text' in item) {
+      return (item as TextNode).text || ''
+    }
+    return ''
+  }).join('')
+}
+```
+
+---
+
+## 8. 资料库系统
+
+### 8.1 内容库操作
+
+```typescript
+// ContentLibraryDialog.tsx
+
+interface ContentPreset {
+  id: string
+  name: string
+  title: string
+  content: string  // TipTap JSON 字符串
+  createdAt: number
+  updatedAt: number
+  pinned?: boolean
+}
+
+/**
+ * 创建内容预设
+ */
+async function createCardContentPreset(
+  name: string,
+  title: string,
+  content: string
+): Promise<void> {
+  const preset: ContentPreset = {
+    id: crypto.randomUUID(),
+    name,
+    title,
+    content,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  }
+  await db.contentPresets.add(preset)
+}
+
+/**
+ * 导入内容预设（JSON 格式）
+ */
+async function importContentPresets(file: File): Promise<number> {
+  const text = await file.text()
+  const data = JSON.parse(text)
+  const presets = Array.isArray(data) ? data : data.presets || []
+
+  let count = 0
+  for (const preset of presets) {
+    await createCardContentPreset(
+      preset.name || '导入内容',
+      preset.title || '',
+      typeof preset.content === 'string' ? preset.content : JSON.stringify(preset.content)
+    )
+    count++
+  }
+  return count
+}
+
+/**
+ * 导出内容预设为 JSON
+ */
+async function exportContentPresets(): Promise<void> {
+  const presets = await db.contentPresets.toArray()
+  const json = JSON.stringify(presets, null, 2)
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `KnowCard_卡片资料库_${timestamp()}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+```
+
+### 8.2 图片库操作
+
+```typescript
+// ImageLibraryDialog.tsx
+
+interface ImageLibraryItem {
+  id: string
+  name: string
+  keywords: string
+  dataUrl: string  // Base64 编码
+  createdAt: number
+}
+
+/**
+ * 从剪贴板导入图片
+ */
+async function importFromClipboard(): Promise<void> {
+  try {
+    const items = await navigator.clipboard.read()
+    for (const item of items) {
+      const imageType = item.types.find(type => type.startsWith('image/'))
+      if (imageType) {
+        const blob = await item.getType(imageType)
+        const dataUrl = await blobToDataUrl(blob)
+        const name = `图片_${Date.now()}`
+
+        await db.imageLibrary.add({
+          id: crypto.randomUUID(),
+          name,
+          keywords: '',
+          dataUrl,
+          createdAt: Date.now(),
+        })
+      }
+    }
+    await loadImages()
+  } catch (error) {
+    console.error('Failed to import from clipboard:', error)
+    alert('无法从剪贴板导入图片')
+  }
+}
+
+/**
+ * 批量上传图片
+ */
+async function uploadImages(files: FileList): Promise<void> {
+  for (const file of files) {
+    if (!file.type.startsWith('image/')) continue
+
+    const dataUrl = await fileToDataUrl(file)
+    await db.imageLibrary.add({
+      id: crypto.randomUUID(),
+      name: file.name,
+      keywords: '',
+      dataUrl,
+      createdAt: Date.now(),
+    })
+  }
+  await loadImages()
+}
+
+/**
+ * 复制图片到剪贴板
+ */
+async function copyToClipboard(dataUrl: string): Promise<void> {
+  try {
+    const response = await fetch(dataUrl)
+    const blob = await response.blob()
+    await navigator.clipboard.write([
+      new ClipboardItem({ [blob.type]: blob })
+    ])
+  } catch (error) {
+    console.error('Failed to copy to clipboard:', error)
+    alert('无法复制图片到剪贴板')
+  }
+}
+```
+
+### 8.3 正则表达式库操作
+
+```typescript
+// RegexLibraryDialog.tsx
+
+interface RegexPreset {
+  id: string
+  name: string
+  description: string
+  pattern: string
+  replace: string
+  createdAt: number
+}
+
+/**
+ * 创建正则预设
+ */
+async function createRegexPreset(
+  name: string,
+  description: string,
+  pattern: string,
+  replace: string
+): Promise<void> {
+  await db.regexPresets.add({
+    id: crypto.randomUUID(),
+    name,
+    description,
+    pattern,
+    replace,
+    createdAt: Date.now(),
+  })
+}
+
+/**
+ * 应用正则替换
+ * @param text 原始文本
+ * @param pattern 正则表达式
+ * @param replace 替换文本
+ * @returns 替换后的文本
+ */
+function applyRegexReplace(text: string, pattern: string, replace: string): string {
+  try {
+    const regex = new RegExp(pattern, 'g')
+    // 处理 \n 转义
+    const actualReplace = replace.replace(/\\n/g, '\n')
+    return text.replace(regex, actualReplace)
+  } catch (error) {
+    console.error('Invalid regex:', error)
+    return text
+  }
+}
+```
+
+---
+
+## 9. 正则替换工具
+
+### 9.1 核心功能实现
+
+```typescript
+// RegexReplaceDialog.tsx
+
+interface RegexReplaceState {
+  inputText: string
+  pattern: string
+  replace: string
+  outputText: string
+  matchCount: number
+  matches: Array<{ start: number; end: number; text: string }>
+}
+
+/**
+ * 执行正则替换并返回匹配信息
+ */
+function executeRegexReplace(
+  inputText: string,
+  pattern: string,
+  replace: string
+): { outputText: string; matchCount: number; matches: Array<{ start: number; end: number; text: string }> } {
+  if (!pattern || !inputText) {
+    return { outputText: inputText, matchCount: 0, matches: [] }
+  }
+
+  try {
+    const regex = new RegExp(pattern, 'g')
+    const matches: Array<{ start: number; end: number; text: string }> = []
+
+    // 查找所有匹配
+    let match
+    while ((match = regex.exec(inputText)) !== null) {
+      matches.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        text: match[0],
+      })
+      // 防止无限循环
+      if (match[0].length === 0) {
+        regex.lastIndex++
+      }
     }
 
-    这是基于经验的近似估算，不需要 DOM。
+    // 执行替换
+    const actualReplace = replace.replace(/\\n/g, '\n')
+    const outputText = inputText.replace(regex, actualReplace)
 
-4.3  卡片宽度计算（calcCardSize）
-
-    Step 1：计算标题宽度（如果有标题）
-    Step 2：按换行符 \n 分割正文，逐行用 estimateTextWidth 计算宽度，取最大值
-    Step 3：卡片宽 = max(标题宽, max(行宽)) + 左右 padding（各 10px）
-    Step 4：px 转 mm，约束在 MIN_WIDTH_MM(40) ~ MAX_WIDTH_MM(300) 之间
-    Step 5：返回整数宽度
-
-4.4  卡片高度计算（calcCardHeight）
-
-    Step 1：将 px 宽度（givenWidthMm * PX_PER_MM）减去左右 padding，得到正文可用宽度
-    Step 2：逐行文本模拟自动换行：
-        for each line in bodyText.split('\n'):
-            remaining = line
-            while remaining.length > 0:
-                贪心取尽可能多的字符，使其渲染宽度 ≤ 正文可用宽度
-                visualLines += 1   // 每换行一次计一个 visualLines
-    Step 3：正文高度 = visualLines × lineHeight（默认 fontSize * 1.5）
-    Step 4：总高 = (标题区: titleFontSize × 2 + 4) + 正文高 + 上下 padding + gap
-    Step 5：转 mm，最小值 22mm，向上取整
-
-    标题区恒定公式：calcTitleHeight = titleFontSize × 2 + 4
-
-4.5  常量一览
-
-    FONT_SIZE_PX = 13         默认正文字号
-    LINE_HEIGHT_RATIO = 1.5    行高倍率
-    PADDING_X_PX = 10          左右内边距
-    PADDING_Y_PX = 3           上下内边距
-    MIN_WIDTH_MM = 40          最小宽度 mm
-    MIN_HEIGHT_MM = 22         最小高度 mm
-    MAX_WIDTH_MM = 300         最大宽度 mm
-
-
-──────────────────────────────────────────────────────────
-5.  富文本解析（TipTap JSON  → 渲染行）
-──────────────────────────────────────────────────────────
-
-    文件：src/utils/richText.ts
-
-5.1  解析架构
-
-    编辑器（TipTap）生成 ProseMirror JSON → parseRichText → ParsedLine[]
-    ParsedLine = { segments: TextSegment[] }
-    TextSegment 携带：text, bold, italic, underline, strikethrough, color, fontSize,
-                       align, imageSrc, imageWidth, imageHeight, latex
-
-5.2  支持的节点类型
-
-    • paragraph / heading → 解析为一行 ParsedLine
-    • image → 单独一行，segments[0].imageSrc 携带图片路径
-    • blockMath → 单独一行，居中显示，segments[0].latex 携带公式源码
-    • bulletList / orderedList → 递归解析，支持嵌套列表
-    • 行内 $...$ 和 $$...$$ 公式 → 正则切分，插入 latex 类型的 TextSegment
-
-5.3  公式正则
-
-    (regex: /(?<!\$)\$\$([^\n$]+?)\$\$(?!\$)|(?<!\$)\$([^\n$]+?)\$(?!\$)/g)
-    同时匹配 $inline$ 和 $$block$$，并避免误匹配 $$$。
-
-5.4  文本提取（extractPlainText）
-
-    用于搜索/筛选/批量处理：递归遍历节点，拼接所有 type="text" 节点的文本。
-
-
-──────────────────────────────────────────────────────────
-6.  LaTeX 数学公式渲染
-──────────────────────────────────────────────────────────
-
-    文件：src/components/canvas/CanvasView.tsx
-
-6.1  渲染原理
-
-    KaTeX 只能输出 HTML DOM，但 Konva 只能渲染 Canvas 元素。
-    解决方案：
-      KaTeX（DOM）→ html2canvas（HTML → 图片）→ Konva Image
-
-6.2  完整渲染流程（useMathImage Hook）
-
-    Step 1：创建隐藏 div，className="katex-wrapper"
-    Step 2：调用 katex.renderToString(latex) 生成 HTML
-    Step 3：将 HTML 写入 div：div.innerHTML = katex_html
-    Step 4：document.body.appendChild(div) —— 将 div 添加到 DOM 才能被 html2canvas 截取
-    Step 5：setTimeout(30ms)，等待浏览器完成布局
-    Step 6：html2canvas(div, { scale: MATH_RENDER_SCALE, backgroundColor: 'transparent' })
-    Step 7：将 canvas 转为 Image 对象
-    Step 8：安全移除 div（检查 document.body.contains(div)）
-
-6.3  清晰度策略
-
-    关键常量：
-      const MATH_RENDER_SCALE = Math.max(window.devicePixelRatio || 1, 2)
-
-    html2canvas 以 2 倍或更高倍（devicePixelRatio）渲染，生成高分辨率图片。
-    然后 CanvasMath 组件中：
-      scaledWidth = image.width / MATH_RENDER_SCALE
-      scaledHeight = image.height / MATH_RENDER_SCALE
-
-    效果：渲染清晰度高（2x 或更高），但逻辑尺寸正常不放大。
-
-6.4  关键特殊逻辑
-
-    • 负号问题：katex.renderToString 前对 latex 字符串做 replace(/-/g, '\\text{-}')，
-      避免 KaTeX 将负号渲染为过短的连字符
-    • 宽度限制：CanvasMath 中 scale = min(1, maxWidth / image.width)，确保公式不超出
-      卡片宽度
-
-6.5  行间距控制
-
-    RichTextBody 中，公式行的估算高度 = fontSize × 1.8 + 2 px。
-    原因：太小（如 fontSize × 0.85）会导致上下公式重叠，太大则间距浪费。
-    fontSize × 1.8 经过了多次调整，最终找到一个既不重叠又不浪费的平衡点。
-
-
-──────────────────────────────────────────────────────────
-7.  Canvas 画布渲染（CanvasView）
-──────────────────────────────────────────────────────────
-
-    文件：src/components/canvas/CanvasView.tsx
-
-7.1  组件层次结构
-
-    CanvasView
-    ├── Stage（缩放 + 平移 + 事件）
-    │   ├── Layer（页面 + 元素）
-    │   │   ├── 页面背景 Rect
-    │   │   ├── 安全区域边框 Rect
-    │   │   ├── CardRenderer × N（卡片渲染）
-    │   │   │   └── RichTextBody（正文 + 公式 + 图片）
-    │   │   └── PageElementRenderer × N（文本框/红色方框/箭头/线段/图片）
-    │   ├── Layer（Transformer 变换框）
-    │   └── Layer（框选矩形）
-    └── TextInputDialog（文本输入弹窗）
-
-7.2  多页面分页
-
-    • pages 按 order 升序排列
-    • 每页垂直排列：y = 前页底部 + 30px 间距
-    • 每页的 safeArea 独立计算（getSafeArea(page)）
-    • 分页逻辑：
-        autoLayoutCards = applyCompactLayout(cards, safeArea, minHSpacing, minVSpacing)
-        overflowIds = findOverflowCards(autoLayoutCards, safeArea)
-        如果 overflowIds 不为空 → 将溢出卡片移到下一页
-        如果下一页不存在 → 自动创建新页面（通过 createAutoPage）
-
-7.3  全局编号
-
-    • showNumbers 模式下，跨页面按 page.order × card.order 全局排序
-    • 排除 excludeFromNumbering 的卡片
-    • 编号从 1 开始连续递增
-
-7.4  缩放与平移
-
-    • Ctrl + 滚轮：缩放（scale 0.1–‑5.0）
-    • 滚轮/拖拽空白区域：平移
-    • fitStage：计算所有页面总宽高，居中显示
-    • zoomReset：scale 恢复 1.0，平移到原点
-
-7.5  框选与 Shift 多选
-
-    • 鼠标拖拽空白区域（非卡片/非元素）→ 框选矩形
-    • 释放时通过 findCardsInRect 检测哪些卡片在框选矩形内
-    • Shift 拖拽 = 添加到已有选中（而非替换）
-
-7.6  剪贴板粘贴图片
-
-    • 监听 paste 事件
-    • clipboardData.files 中取 image/*
-    • FileReader 读取为 dataURL
-    • 存储为 PageElement（type: 'image'），尺寸：img.width / MM_TO_PX
-
-7.7  卡片碰撞检测（snapToEdges）
-
-    拖动卡片时，检查：
-    • 是否接近安全区域四边（左/右/上/下/中）
-    • 是否接近其他卡片边缘
-    • 阈值 snapThreshold = 5px
-    • 吸附后位置四舍五入到整数像素
-
-
-──────────────────────────────────────────────────────────
-8.  PNG 导出与打印模块
-──────────────────────────────────────────────────────────
-
-    文件：src/components/canvas/CanvasView.tsx
-
-8.1  PNG 导出流程
-
-    function handleExportPng() {
-        Step 1：获取所有页面尺寸（getPageDimensions）
-        Step 2：Stage.toDataURL() 一次性导出整个 Stage 为 PNG
-        Step 3：或 Stage.toBlob() 导出为 Blob
-        Step 4：触发浏览器下载：a.href = url, a.download = 'xxx.png', a.click()
+    return {
+      outputText,
+      matchCount: matches.length,
+      matches,
     }
+  } catch (error) {
+    console.error('Regex error:', error)
+    return { outputText: inputText, matchCount: 0, matches: [] }
+  }
+}
 
-8.2  打印流程
+/**
+ * 合并连续空行
+ */
+function mergeBlankLines(text: string): string {
+  return text.replace(/\n{3,}/g, '\n\n')
+}
 
-    function handlePrint() {
-        Step 1：Stage.toDataURL() 获取 PNG Data URL
-        Step 2：const printWin = window.open('', '_blank')
-        Step 3：printWin.document 写入：
-            <html><head><style>@page { size: A4; margin: 0 }</style></head>
-            <body style="margin:0"><img src="${dataUrl}" style="width:100%"/></body></html>
-        Step 4：printWin.focus()
-        Step 5：img.onload → printWin.print() → printWin.close()
+/**
+ * 导出为 TXT 文件
+ */
+function exportToTxt(text: string): void {
+  const blob = new Blob([text], { type: 'text/plain' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `正则替换结果_${timestamp()}.txt`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+```
+
+---
+
+## 10. 用户认证系统
+
+### 10.1 密码哈希
+
+```typescript
+// auth.ts
+
+const SALT = 'knowcard-salt-2025'
+
+/**
+ * SHA-256 哈希（使用 Web Crypto API）
+ */
+async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(SALT + password)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * 验证密码
+ */
+async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  const passwordHash = await hashPassword(password)
+  return passwordHash === hash
+}
+```
+
+### 10.2 用户注册与登录
+
+```typescript
+/**
+ * 用户注册
+ */
+async function register(username: string, password: string): Promise<User> {
+  // 检查用户名是否已存在
+  const existing = await db.users.where('username').equals(username).first()
+  if (existing) {
+    throw new Error('用户名已存在')
+  }
+
+  const passwordHash = await hashPassword(password)
+  const user: User = {
+    id: crypto.randomUUID(),
+    username,
+    passwordHash,
+    isAdmin: false,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  }
+
+  await db.users.add(user)
+  return user
+}
+
+/**
+ * 用户登录
+ */
+async function login(username: string, password: string): Promise<User> {
+  const user = await db.users.where('username').equals(username).first()
+  if (!user) {
+    throw new Error('用户名或密码错误')
+  }
+
+  const isValid = await verifyPassword(password, user.passwordHash)
+  if (!isValid) {
+    throw new Error('用户名或密码错误')
+  }
+
+  return user
+}
+```
+
+---
+
+## 11. 数据备份与恢复
+
+### 11.1 完整数据库导出 (backup.ts)
+
+```typescript
+/**
+ * 完整数据库导出
+ */
+async function exportDatabase(): Promise<void> {
+  const [projects, pages, cards, cardGroups, pageElements, settings,
+         stylePresets, contentPresets, cardSizePresets, users,
+         imageLibrary, regexPresets] = await Promise.all([
+    db.projects.toArray(),
+    db.pages.toArray(),
+    db.cards.toArray(),
+    db.cardGroups.toArray(),
+    db.pageElements.toArray(),
+    db.settings.toArray(),
+    db.stylePresets.toArray(),
+    db.contentPresets.toArray(),
+    db.cardSizePresets.toArray(),
+    db.users.toArray(),
+    db.imageLibrary.toArray(),
+    db.regexPresets.toArray(),
+  ])
+
+  const data = {
+    version: 7,
+    exportedAt: new Date().toISOString(),
+    projects,
+    pages,
+    cards,
+    cardGroups,
+    pageElements,
+    settings,
+    stylePresets,
+    contentPresets,
+    cardSizePresets,
+    users,
+    imageLibrary,
+    regexPresets,
+  }
+
+  const json = JSON.stringify(data, null, 2)
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `KnowCard_完整数据库_${timestamp()}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+```
+
+### 11.2 完整数据库导入
+
+```typescript
+/**
+ * 完整数据库导入
+ */
+async function importDatabase(file: File): Promise<void> {
+  const text = await file.text()
+  const data = JSON.parse(text)
+
+  // 验证版本
+  if (!data.version || !data.projects) {
+    throw new Error('无效的数据库文件格式')
+  }
+
+  // 清除现有数据
+  await db.transaction('rw',
+    [db.projects, db.pages, db.cards, db.cardGroups, db.pageElements,
+     db.settings, db.stylePresets, db.contentPresets, db.cardSizePresets,
+     db.users, db.imageLibrary, db.regexPresets],
+    async () => {
+      // 清空所有表
+      await db.projects.clear()
+      await db.pages.clear()
+      await db.cards.clear()
+      await db.cardGroups.clear()
+      await db.pageElements.clear()
+      await db.settings.clear()
+      await db.stylePresets.clear()
+      await db.contentPresets.clear()
+      await db.cardSizePresets.clear()
+      await db.users.clear()
+      await db.imageLibrary.clear()
+      await db.regexPresets.clear()
+
+      // 导入数据
+      if (data.projects?.length) await db.projects.bulkAdd(data.projects)
+      if (data.pages?.length) await db.pages.bulkAdd(data.pages)
+      if (data.cards?.length) await db.cards.bulkAdd(data.cards)
+      if (data.cardGroups?.length) await db.cardGroups.bulkAdd(data.cardGroups)
+      if (data.pageElements?.length) await db.pageElements.bulkAdd(data.pageElements)
+      if (data.settings?.length) await db.settings.bulkAdd(data.settings)
+      if (data.stylePresets?.length) await db.stylePresets.bulkAdd(data.stylePresets)
+      if (data.contentPresets?.length) await db.contentPresets.bulkAdd(data.contentPresets)
+      if (data.cardSizePresets?.length) await db.cardSizePresets.bulkAdd(data.cardSizePresets)
+      if (data.users?.length) await db.users.bulkAdd(data.users)
+      if (data.imageLibrary?.length) await db.imageLibrary.bulkAdd(data.imageLibrary)
+      if (data.regexPresets?.length) await db.regexPresets.bulkAdd(data.regexPresets)
     }
-
-    使用 CSS @page 确保打印时按 A4 纸张规格输出。
-
-8.3  多页导出
-
-    如果有多页：
-    • 每页单独导出：逐页计算每页的 Stage 裁剪区域，分别 toDataURL
-    • 合并导出：逐页渲染到同一个 Blob（含分隔）
-
-8.4  防抖处理
-
-    Stage.toDataURL() 可能耗时，exportPNG/print 操作内部不做频繁调用。
-    缩放/平移后需等待渲染完成再导出。
-
-
-──────────────────────────────────────────────────────────
-9.  数据库备份与恢复
-──────────────────────────────────────────────────────────
-
-    文件：src/db/backup.ts
-
-9.1  数据表清单
-
-    | 表名           | 内容               | 备份 | 重置 |
-    |----------------|-------------------|------|------|
-    | projects       | 项目               | ✓    | ✓    |
-    | pages          | 页面               | ✓    | ✓    |
-    | cards          | 卡片               | ✓    | ✓    |
-    | cardGroups     | 卡片分组            | ✓    | ✓    |
-    | pageElements   | 页面元素（图片等）   | ✓    | ✓    |
-    | settings       | 应用设置            | ✓    | ✓    |
-    | stylePresets   | 样式预设（样式库）   | ✓    | ✓    |
-    | contentPresets | 内容预设（资料库）   | ✓    | ✓    |
-    | cardSizePresets| 尺寸预设（尺寸库）   | ✓    | ✓    |
-    | users          | 用户表              | ✗    | ✗    |
-
-    重要设计决策：users 表不随备份导出，也不在重置时清空。
-    原因：用户在 A 机器创建的管理员不应覆盖 B 机器的用户数据。
-
-9.2  导出流程
-
-    exportDatabase():
-        Step 1：db.projects.toArray() + 8 张其他表并行读取
-        Step 2：JSON.stringify(data, null, 2) 格式化
-        Step 3：Blob → URL.createObjectURL → a.click() 触发下载
-        文件名：KnowCard_完整数据库_YYYYMMDD_HHmmss.json
-
-9.3  导入流程
-
-    importDatabase(file):
-        Step 1：file.text() 读取 → JSON.parse
-        Step 2：校验必须字段（projects/pages/cards/cardGroups/pageElements）
-        Step 3：db.transaction('rw', allTables) 内：
-            a. 清空全部 9 张表（不含 users）
-            b. 批量写入 bulkAdd
-        Step 4：返回 { success: true } 或 { success: false, error: '...' }
-
-9.4  重置流程
-
-    resetDatabase():
-        Step 1：先调用 exportDatabase() 做最后一次备份
-        Step 2：备份失败 → 取消重置，返回失败
-        Step 3：备份成功 → 清空 5 张核心业务表（projects/pages/cards/cardGroups/pageElements）
-        Step 4：保留 settings/stylePresets/contentPresets/cardSizePresets/users
-
-    设计意图：保留预设数据和用户数据，只清除项目相关数据。
-
-
-──────────────────────────────────────────────────────────
-10. 用户认证系统
-──────────────────────────────────────────────────────────
-
-    文件：src/db/auth.ts
-
-10.1 密码安全性
-
-    const SALT = 'knowcard-salt-2025'
-
-    hashPassword(password):
-        encoder = new TextEncoder()
-        data = encoder.encode(password + SALT)
-        hashBuffer = await crypto.subtle.digest('SHA-256', data)
-        转为十六进制字符串
-        return hashHex
-
-    使用 Web Crypto API 原生 SHA-256 实现，无第三方密码库依赖。
-
-10.2 功能实现
-
-    registerUser(username, password, isAdmin):
-        • 检查用户名是否已存在（equalsIgnoreCase）
-        • 哈希密码
-        • 写入 users 表
-
-    loginUser(username, password):
-        • 先哈希输入密码
-        • 同时匹配 username 和 passwordHash
-        • 匹配失败抛出错误
-
-    ensureAdminUser():
-        • 应用启动时调用
-        • 如果 users 表为空（count = 0），创建默认 admin/admin123
-
-10.3 更新的功能
-
-    • updateUsername(userId, newUsername)：更新用户名，检查重名
-    • updatePassword(userId, newPassword)：更新密码哈希
-    • updateUserRole(userId, isAdmin)：修改管理员权限
-    • deleteUser(userId)：删除用户（前端保护：不允许删除自己）
-    • getAllUsers()：获取所有用户列表（仅管理员可调用）
-
-
-──────────────────────────────────────────────────────────
-11. Zustand 状态管理（useCardStore）
-──────────────────────────────────────────────────────────
-
-    文件：src/stores/useCardStore.ts
-
-11.1 Store 设计
-
-    每个核心领域一个 Store：
-    • useProjectStore → 项目列表、当前项目
-    • usePageStore → 页面列表、当前页面
-    • useCardStore → 卡片 CRUD、排序、样式管理、批量导入
-    • usePageElementStore → 页面元素 CRUD
-    • useEditorStore → 编辑器开关状态
-    • useCanvasStore → 缩放/平移状态
-    • useAuthStore → 当前登录用户
-
-11.2 卡片排序（reorderCards）
-
-    前端拖拽后调用 reorderCards(cardIds: string[])：
-    for (let i = 0; i < cardIds.length; i++)
-        db.cards.update(cardIds[i], { order: i })
-    → loaderCards → 触发 React 重新渲染
-
-11.3 卡片编号重排（renumberCard）
-
-    目标：将某张卡片移动到编号为 newNumber 的位置（跨页面）
-    Step 1：构建全局有序列表 globalOrdered（pages.sortBy(order) → cards.sortBy(order)）
-    Step 2：移除目标卡片（movedIdx）
-    Step 3：在 newNumber 位置插入（跳过 excludeFromNumbering 的卡片计数）
-    Step 4：按页面分组，逐页更新 order
-    Step 5：目标卡片更新 pageId（可能换页）
-
-11.4 样式复制/粘贴
-
-    复制：sessionStorage.setItem('copiedCardStyle', JSON.stringify(card.style))
-    粘贴：从 sessionStorage 读取 → updateCard(cardId, { style })
-
-    设计为跨 Tab 生效（sessionStorage），而非 zustand store。
-
-11.5 应用样式到所有卡片
-
-    applyStyleToAll(sourceCardId)：
-    • 获取 sourceCard.style
-    • db.cards.where('projectId').equals(projectId) 获取该项目所有卡片
-    • 批量 db.cards.update(card.id, { style })
-
-
-──────────────────────────────────────────────────────────
-12. 图片处理与裁剪
-──────────────────────────────────────────────────────────
-
-12.1 图片导入
-
-    三个入口：
-    TopToolbar.tsx：
-      • 文件选择器：img.onload → size: { w: img.width/ PX_PER_MM, h: img.height/ PX_PER_MM }
-      • 剪贴板粘贴：同理转换
-    CanvasView.tsx：
-      • 剪贴板粘贴事件 → 同样 px→mm 转换
-      • 都保留 1 位小数
-
-12.2 图片裁剪（CropDialog）
-
-    文件：src/components/canvas/CropDialog.tsx
-
-    Step 1：加载原始图片到隐藏 canvas
-    Step 2：拖拽选择裁剪区域（4 个角的缩放手柄）
-    Step 3：ctx.drawImage(original, sx, sy, sw, sh, 0, 0, sw, sh) 裁剪
-    Step 4：裁剪后 canvas.toDataURL() 返回
-    Step 5：PropertyPanel 中：img.onload → img.width / PX_PER_MM → 更新元素尺寸
-
-12.3 图片尺寸调整
-
-    PropertyPanel 中 show 图片的宽度/高度输入框：
-    • 输入单位为 mm
-    • 保留 1 位小数
-    • 支持锁定宽高比（lockImageRatio）
-    • 修改时按比例自动调整另一个维度
-
-12.4 TipTap 编辑器中的图片
-
-    EditorModal 中使用 custom ResizableImage extension（ReactNodeViewRenderer）：
-    • 图片包裹在可拖拽调整大小的容器中
-    • 使用 CSS aspect-ratio 保持比例
-
-
-──────────────────────────────────────────────────────────
-13. 富文本编辑器集成（TipTap + KaTeX）
-──────────────────────────────────────────────────────────
-
-    文件：src/components/editor/EditorModal.tsx
-
-13.1 编辑器配置
-
-    • StarterKit（paragraph, heading, bold, italic, 等基础节点）
-    • Mathematics extension：支持 $$ 块级公式和 $ 行内公式
-    • Image extension（inline: true）：支持点击选中图片
-    • Color / Highlight / TextAlign / Underline / FontFamily / TextStyle
-
-13.2 图片选中机制
-
-    • handleDOMEvents.click 拦截 img 点击事件
-    • NodeSelection.create(view, imgNodePos) 创建图片选区
-    • CSS 为选中状态添加蓝色边框高亮
-
-13.3 图片大小调整
-
-    • ResizeObserver 监听图片尺寸变化
-    • {editor.isActive('image') && ...} 条件渲染宽高输入框
-
-
-──────────────────────────────────────────────────────────
-14. 碰撞检测与辅助对齐（snapToEdges）
-──────────────────────────────────────────────────────────
-
-14.1 碰撞检测（checkCollision）
-
-    function checkCollision(a: Rect, b: Rect): boolean
-    a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
-    标准 AABB 矩形碰撞检测。
-
-14.2 框选检测（findCardsInRect）
-
-    遍历所有卡片，返回与 selectionRect 碰撞的卡片索引。
-
-14.3 溢出检测（findOverflowCards）
-
-    检测 card 是否超出 safeArea（含 tolerance 容差）：
-    任一方向超出 → 标记为溢出卡片。
-
-14.4 吸附对齐（snapToEdges）
-
-    Step 1：水平吸附：
-        • 安全区域左/右/中边缘（阈值 5px）
-        • 其他卡片的 left 与 right 边缘
-    Step 2：垂直吸附（相同逻辑）
-
-
-──────────────────────────────────────────────────────────
-15. 资料库系统
-──────────────────────────────────────────────────────────
-
-    文件：src/components/card/ContentLibraryDialog.tsx
-
-15.1 内容库
-
-    • 数据表 contentPresets：name, title, content（TipTap JSON 字符串）、pinned
-    • 导入 JSON 格式：解析数组，逐条 createCardContentPreset
-    • 导出 JSON 格式：toArray + JSON.stringify + 下载（文件名含时间戳）
-    • 导入 TXT 格式：纯文本 / 标题：正文格式，批量导入
-    • 应用到卡片 → createCardsFromPresets → 使用当前卡片的样式
-
-15.2 样式库
-
-    数据表 stylePresets：name, style（JSON 字符串）、pinned
-
-15.3 尺寸库
-
-    数据表 cardSizePresets：name, width, height（mm）、pinned
-
-
-──────────────────────────────────────────────────────────
-附录 A：核心常量汇总
-──────────────────────────────────────────────────────────
-
-    MM_TO_PX             3.779527559          mm→px 转换系数
-    PX_PER_MM            3.779527559          px→mm 转换系数
-    FONT_SIZE_PX         13                   默认正文字号
-    LINE_HEIGHT_RATIO    1.5                  行高倍率
-    PADDING_X_PX         10                   卡片左右内边距 px
-    PADDING_Y_PX         3                    卡片上下内边距 px
-    MIN_WIDTH_MM         40                   卡片最小宽度 mm
-    MIN_HEIGHT_MM        22                   卡片最小高度 mm
-    MAX_WIDTH_MM         300                  卡片最大宽度 mm
-    SALT                 'knowcard-salt-2025'  密码哈希盐值
-    SNAP_THRESHOLD       5                    吸附对齐阈值 px
-    MATH_RENDER_SCALE    max(devicePixelRatio, 2)  公式渲染清晰度
-    FORMULA_LINE_HEIGHT  fontSize * 1.8 + 2   公式行估算高度
-
-
-──────────────────────────────────────────────────────────
-附录 B：依赖清单
-──────────────────────────────────────────────────────────
-
-    react              ^19.2.6         UI 框架
-    react-dom          ^19.2.6         DOM 渲染
-    react-konva        ^19.2.4         Canvas 绑定
-    konva              ^10.3.0         Canvas 库
-    react-router-dom   ^7.16.0         路由
-    zustand            ^5.0.14         状态管理
-    dexie              ^4.4.3          IndexedDB 封装
-    uuid               ^14.0.0         UUID 生成
-    katex              ^0.17.0         LaTeX 渲染
-    html2canvas        ^1.4.1          HTML→Canvas
-    jspdf              ^4.2.1          PDF 生成
-    lucide-react       ^1.17.0         图标库
-    @tiptap/react      ^3.23.6         富文本编辑器
-    @dnd-kit/core      ^6.3.1          拖拽排序
-
-──────────────────────────────────────────────────────────
-文档版本：1.0
-最后更新：2026-06-02
+  )
+}
+```
+
+### 11.3 用户设置导出
+
+```typescript
+/**
+ * 用户设置导出（不含项目数据）
+ * 导出：settings, stylePresets, contentPresets, cardSizePresets, imageLibrary, regexPresets
+ */
+async function exportUserSettings(): Promise<void> {
+  const [settings, stylePresets, contentPresets, cardSizePresets, imageLibrary, regexPresets] =
+    await Promise.all([
+      db.settings.toArray(),
+      db.stylePresets.toArray(),
+      db.contentPresets.toArray(),
+      db.cardSizePresets.toArray(),
+      db.imageLibrary.toArray(),
+      db.regexPresets.toArray(),
+    ])
+
+  const data = {
+    version: 1,
+    type: 'user-settings',
+    exportedAt: new Date().toISOString(),
+    settings,
+    stylePresets,
+    contentPresets,
+    cardSizePresets,
+    imageLibrary,
+    regexPresets,
+  }
+
+  const json = JSON.stringify(data, null, 2)
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `KnowCard_用户设置_${timestamp()}.json`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+```
+
+### 11.4 数据库重置
+
+```typescript
+/**
+ * 重置数据库（删除所有数据）
+ * 重置前会先导出完整备份
+ */
+async function resetDatabase(): Promise<void> {
+  // 先导出备份
+  await exportDatabase()
+
+  // 确认用户操作
+  if (!confirm('确定要重置数据库吗？这将删除所有数据。')) {
+    return
+  }
+
+  // 删除所有数据
+  await db.delete()
+  await db.open()
+
+  // 重新创建默认管理员
+  const defaultAdmin: User = {
+    id: crypto.randomUUID(),
+    username: 'admin',
+    passwordHash: await hashPassword('admin123'),
+    isAdmin: true,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  }
+  await db.users.add(defaultAdmin)
+}
+```
+
+---
+
+## 12. 项目批量操作功能
+
+### 12.1 多选状态管理
+
+```typescript
+// ProjectManager.tsx
+
+const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(new Set())
+
+/**
+ * 切换项目选中状态
+ */
+function toggleProjectSelection(id: string, event?: Event): void {
+  event?.stopPropagation()
+  setSelectedProjectIds(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) {
+      next.delete(id)
+    } else {
+      next.add(id)
+    }
+    return next
+  })
+}
+
+/**
+ * 全选/取消全选
+ */
+function selectAllProjects(): void {
+  if (selectedProjectIds.size === projects.length) {
+    // 取消全选
+    setSelectedProjectIds(new Set())
+  } else {
+    // 全选
+    setSelectedProjectIds(new Set(projects.map(p => p.id)))
+  }
+}
+
+/**
+ * 清空选择
+ */
+function clearSelection(): void {
+  setSelectedProjectIds(new Set())
+}
+```
+
+### 12.2 批量导出
+
+```typescript
+/**
+ * 批量导出选中的项目
+ * 将所有选中项目合并到一个 JSON 文件
+ */
+async function handleBatchExport(): Promise<void> {
+  if (selectedProjectIds.size === 0) {
+    alert('请先选择要导出的项目')
+    return
+  }
+
+  const selectedProjects = projects.filter(p => selectedProjectIds.has(p.id))
+  const allData = []
+
+  // 遍历选中项目，获取每个项目的数据
+  for (const project of selectedProjects) {
+    const blob = await exportProject(project.id)
+    const text = await blob.text()
+    const data = JSON.parse(text)
+    allData.push(data)
+  }
+
+  // 构建合并数据
+  const mergedData = {
+    version: 2,
+    type: 'multi-project',
+    projects: allData,
+    exportedAt: new Date().toISOString()
+  }
+
+  const mergedBlob = new Blob([JSON.stringify(mergedData, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(mergedBlob)
+  const a = document.createElement('a')
+  a.href = url
+
+  // 生成文件名
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const names = selectedProjects.map(p => p.name).join('_')
+
+  // 文件名超长处理：超过25字符截断
+  let displayNames = names
+  if (names.length > 25) {
+    displayNames = names.substring(0, 25) + `…等${selectedProjects.length}个文件`
+  }
+
+  a.download = `KnowCard_${displayNames}_${dateStr}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+```
+
+### 12.3 批量删除
+
+```typescript
+/**
+ * 批量删除选中的项目
+ */
+async function handleBatchDelete(): Promise<void> {
+  if (selectedProjectIds.size === 0) {
+    alert('请先选择要删除的项目')
+    return
+  }
+
+  const count = selectedProjectIds.size
+  if (!confirm(`确定删除选中的 ${count} 个项目？此操作不可恢复。`)) {
+    return
+  }
+
+  // 遍历删除每个选中的项目
+  for (const id of selectedProjectIds) {
+    await deleteProject(id)
+  }
+
+  // 清空选中状态
+  setSelectedProjectIds(new Set())
+}
+```
+
+### 12.4 UI 显示逻辑
+
+```typescript
+// 批量操作按钮仅在有选中项目时显示
+{selectedProjectIds.size > 0 && (
+  <div className="batch-actions">
+    <button onClick={selectAllProjects}>
+      {selectedProjectIds.size === projects.length ? '取消全选' : '全选'}
+    </button>
+    <button onClick={handleBatchExport}>
+      批量导出 ({selectedProjectIds.size})
+    </button>
+    <button className="danger" onClick={handleBatchDelete}>
+      批量删除 ({selectedProjectIds.size})
+    </button>
+  </div>
+)}
+```
+
+### 12.5 选中项目样式
+
+```css
+/* App.css 或 ProjectManager.css */
+
+.project-card.selected {
+  border-color: var(--accent-color);
+  background: rgba(22, 119, 255, 0.06);
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.15);
+}
+
+.project-card {
+  transition: all 0.2s ease;
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+
+.project-card:hover {
+  border-color: #e0e0e0;
+}
+```
+
+---
+
+## 附录 A：核心常量汇总
+
+```
+常量名称              值                      说明
+─────────────────────────────────────────────────────────────────
+PX_PER_MM            3.779527559           1mm = 3.779...px (96 DPI)
+MM_TO_PX             3.779527559           mm→px 转换系数
+SNAP_THRESHOLD       5                     吸附阈值 px
+MATH_RENDER_SCALE    max(devicePixelRatio, 2)  公式渲染清晰度
+SALT                 'knowcard-salt-2025'  密码哈希盐值
+DEFAULT_FONT_SIZE    13                    默认正文字号 px
+DEFAULT_LINE_HEIGHT  1.5                   默认行高倍率
+MIN_CARD_WIDTH_MM   40                    卡片最小宽度 mm
+MIN_CARD_HEIGHT_MM  22                    卡片最小高度 mm
+MAX_CARD_WIDTH_MM   300                   卡片最大宽度 mm
+A4_WIDTH_MM         210                   A4 纸宽度 mm
+A4_HEIGHT_MM        297                   A4 纸高度 mm
+A3_WIDTH_MM         297                   A3 纸宽度 mm
+A3_HEIGHT_MM        420                   A3 纸高度 mm
+```
+
+## 附录 B：TypeScript 类型定义汇总
+
+```typescript
+// 项目类型
+interface Project {
+  id: string
+  name: string
+  description: string
+  createdAt: number
+  updatedAt: number
+  order: number
+  isPinned: boolean
+}
+
+// 卡片类型
+interface Card {
+  id: string
+  projectId: string
+  pageId: string
+  title: string
+  name?: string
+  content: object
+  style: CardStyle
+  size: CardSize
+  flags: CardFlags
+  position: { x: number; y: number }
+  groupId?: string
+  order: number
+  createdAt: number
+  updatedAt: number
+}
+
+// 卡片样式
+interface CardStyle {
+  titleFont: string
+  titleFontSize: number
+  titleBold: boolean
+  titleColor: string
+  titleBackgroundColor: string
+  titleHeight?: number
+  titlePaddingY?: number
+  titleNumberStyle?: TitleNumberStyle
+  bodyFont: string
+  bodyFontSize: number
+  bodyColor: string
+  bodyBackgroundColor: string
+  bodyLineHeight?: number
+  borderColor: string
+  borderWidth: number
+  borderRadius: number
+  paddingX?: number
+  color: string
+  backgroundColor: string
+}
+
+// 卡片标志
+interface CardFlags {
+  hideBorder: boolean
+  hideTitle: boolean
+  hideTitleText: boolean
+  hideBody: boolean
+  hideBodyArea: boolean
+  showNumber: boolean
+  excludeFromLayout: boolean
+  excludeFromNumbering: boolean
+}
+
+// 编号风格
+type TitleNumberStyle =
+  | 'number'
+  | 'number-dot'
+  | 'number-hash'
+  | 'number-hash-prefix'
+  | 'number-dash'
+  | 'number-space'
+```
+
+---
+
+**文档版本：v1.1**
+**最后更新：2026-06-04**
+
+**更新内容：**
+- 新增第12章：项目批量操作功能（多选、批量导出、批量删除）
+- 更新第11章：数据备份与恢复
+  - 新增用户设置导出功能（exportUserSettings）
+  - 新增数据表清单（imageLibrary、regexPresets）
+- 更新编号风格类型定义（新增6种风格）
+- 新增隐藏标题文字功能相关数据结构

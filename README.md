@@ -1,73 +1,177 @@
-# React + TypeScript + Vite
+# KnowCard - 知识卡片排版工具
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+<div align="center">
 
-Currently, two official plugins are available:
+![KnowCard Logo](public/favicon.svg)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+**专业的知识卡片智能排版工具**
 
-## React Compiler
+[在线演示](https://williamzlj.github.io/KnowCard/) | [功能特性](#-核心功能) | [快速开始](#-快速开始)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+</div>
 
-## Expanding the ESLint configuration
+---
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## 📚 产品介绍
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+KnowCard 是一款专业的知识卡片智能排版工具，专为教育工作者、学生和知识工作者设计，帮助用户快速创建、排版和导出精美的知识卡片。
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+**核心特点：**
+- 📐 物理尺寸（毫米）精确控制，确保打印效果
+- 📝 支持 LaTeX 数学公式渲染
+- 🎨 丰富的卡片样式自定义选项
+- ⚡ 批量操作功能，提高工作效率
+- 💾 本地存储，数据安全可控
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+---
+
+## ✨ 核心功能
+
+### 🎨 卡片设计与排版
+
+- **多种排版模式**：支持横向排版和竖向排版两种布局模式
+- **卡片样式高度自定义**：
+  - 标题样式：字体、字号、加粗、颜色、背景色
+  - 正文样式：字体、字号、颜色、背景色、行间距
+  - 边框样式：颜色、粗细、圆角、左右边距
+- **卡片尺寸精确控制**：支持以 mm 为单位设置卡片宽高
+- **自动高度计算**：智能根据内容调整卡片高度
+- **编号风格选择**：支持纯数字、数字+点、数字+#、数字+横杠、数字+空格等多种编号格式
+- **显示控制**：隐藏标题文字、隐藏正文文字、隐藏边框、排除自动排版、排除编号
+
+### 📝 富内容编辑
+
+- **富文本编辑**：支持文本格式化（加粗、斜体、下划线、高亮等）
+- **LaTeX 数学公式**：支持行内公式和独立公式，高清晰度渲染
+- **图片支持**：图片裁剪、批量上传、剪贴板粘贴、物理尺寸精确显示
+- **文本对齐**：左对齐、居中、右对齐
+
+### 📦 项目管理
+
+- **项目管理功能**：创建、导入/导出、置顶、重排序
+- **项目多选批量操作**：复选框选择多个项目、批量导出、批量删除
+- **数据库管理**：完整数据库导出/导入/重置、用户设置导出
+
+### 💾 资料库系统
+
+- **内容库**：保存常用内容预设，支持导入/导出
+- **样式库**：保存卡片样式预设，一键应用到卡片
+- **尺寸库**：保存常用尺寸预设，快速调用
+- **图片库**：图片网格展示、关键词搜索、批量上传、复制到剪贴板、插入到画布
+- **正则表达式库**：保存正则替换规则，快速加载
+
+### 🔧 正则替换工具
+
+- 独立的正则替换工具页面
+- 实时预览替换效果、显示匹配数量
+- 支持将替换文本设为回车 `\n`
+- 导出 TXT 文件、从剪贴板导入文本、合并空行功能
+
+### 🔐 用户系统
+
+- 用户登录/注册、修改用户名和密码
+- 用户管理后台（管理员权限）
+- 权限分级管理
+
+---
+
+## 🚀 快速开始
+
+### 在线使用
+
+直接访问 [GitHub Pages](https://williamzlj.github.io/KnowCard/) 在线使用，无需安装。
+
+### 本地运行
+
+```bash
+# 克隆仓库
+git clone https://github.com/williamzlj/KnowCard.git
+
+# 进入目录
+cd KnowCard
+
+# 安装依赖
+npm install
+
+# 启动开发服务器
+npm run dev
+
+# 构建生产版本
+npm run build
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+---
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## 🛠️ 技术栈
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+| 类别 | 技术 |
+|-----|------|
+| 前端框架 | React 19 |
+| 类型系统 | TypeScript 6 |
+| 构建工具 | Vite 8 |
+| 路由 | React Router 7 |
+| 状态管理 | Zustand 5 |
+| 数据库 | Dexie.js (IndexedDB) |
+| 画布渲染 | Konva + React-Konva |
+| 富文本编辑 | TipTap |
+| 公式渲染 | KaTeX |
+| 图片处理 | html2canvas |
+
+---
+
+## 📂 文件格式
+
+### 导出文件名规范
+
+| 导出类型 | 文件名格式 |
+|---------|-----------|
+| 完整数据库 | `KnowCard_完整数据库_YYYYMMDD_HHMMSS.json` |
+| 用户设置 | `KnowCard_用户设置_YYYYMMDD_HHMMSS.json` |
+| 批量项目导出 | `KnowCard_项目1_项目2_..._YYYYMMDD.json` |
+| 单个项目导出 | `KnowCard_项目名称_YYYYMMDD.json` |
+
+---
+
+## 📝 更新日志
+
+### v1.1 (2026-06-04)
+- **项目管理多选功能**：支持同时选择多个项目进行批量操作
+- **批量导出优化**：将选中项目合并到一个文件中导出，文件名智能截断
+- **用户设置导出**：新增导出用户设置功能，方便在不同环境下迁移个人配置
+- **编号风格功能**：支持多种编号格式（纯数字、数字+符号等）
+- **隐藏标题文字功能**：支持隐藏标题文字，仅显示编号
+- **UI交互优化**：全选按钮仅在有选中项目时显示，提升用户体验
+
+---
+
+## 🛡️ 数据安全
+
+- 本地浏览器存储，数据在您的控制下
+- 支持完整数据库导出备份
+- 支持用户设置单独备份，方便换设备时迁移个人配置
+- 重置前自动备份，防止误操作
+- 用户密码使用 SHA-256 哈希存储
+
+---
+
+## 📖 文档
+
+- [产品说明](./KnowCard%20知识卡片排版工具产品说明.txt)
+- [设计开发文档](./KnowCard产品设计开发文档.txt)
+- [核心技术实现](./KnowCards核心技术实现文档.txt)
+
+---
+
+## 📄 License
+
+MIT License
+
+---
+
+<div align="center">
+
+**KnowCard - 让知识卡片制作更简单、更专业！**
+
+© 2026 KnowCard 项目
+
+</div>
